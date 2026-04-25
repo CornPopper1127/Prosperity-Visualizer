@@ -85,6 +85,7 @@
               </div>
             </div>
             <button class="btn icon" id="theme-toggle" title="Toggle theme">☾</button>
+            <button class="btn" id="restore-layout" title="Reset panel order and sizes to default" style="font-size:10px;padding:3px 8px;">↺ Restore layout</button>
             <button class="btn icon" id="open-about-top" title="About / privacy">i</button>
           </div>
           <div class="topbar-row small">
@@ -206,10 +207,78 @@
             </header>
             <div class="panel-body logs-body" id="logs-body"></div>
           </section>
+
+          <section class="panel panel-moneyness" id="panel-moneyness">
+            <header class="panel-header">
+              <span id="moneyness-title">Moneyness · VEV Options</span>
+              <div class="panel-actions">
+                <div class="bs-params" id="moneyness-params"></div>
+                <label class="check small"><input type="checkbox" id="moneyness-premium" /> subtract premium</label>
+                <button class="btn icon" id="moneyness-reset-zoom" title="Reset zoom">⤾</button>
+              </div>
+            </header>
+            <div class="chart-legend" id="moneyness-legend"></div>
+            <div class="panel-body chart-body">
+              <canvas class="chart" id="chart-moneyness"></canvas>
+              <div class="chart-empty" id="chart-moneyness-empty">Loading CSV data…</div>
+            </div>
+          </section>
+
+          <section class="panel panel-volsmile" id="panel-volsmile">
+            <header class="panel-header">
+              <span id="volsmile-title">Implied Volatility Smile · VEV Options</span>
+              <div class="panel-actions">
+                <div class="bs-params" id="volsmile-params"></div>
+                <button class="btn icon" id="volsmile-reset-zoom" title="Reset zoom">⤾</button>
+              </div>
+            </header>
+            <div class="chart-legend" id="volsmile-legend"></div>
+            <div class="panel-body chart-body">
+              <canvas class="chart" id="chart-volsmile"></canvas>
+              <div class="chart-empty" id="chart-volsmile-empty">Loading CSV data…</div>
+            </div>
+          </section>
+
+          <section class="panel panel-moneyness-time" id="panel-moneyness-time">
+            <header class="panel-header">
+              <span id="moneyness-time-title">Moneyness vs Time</span>
+              <div class="panel-actions">
+                <label class="check small"><input type="checkbox" id="moneyness-time-premium" /> subtract premium</label>
+                <div class="speed-group">
+                  <button class="speed-btn active" id="moneyness-time-mode-line">line</button>
+                  <button class="speed-btn" id="moneyness-time-mode-dot">dot</button>
+                </div>
+                <button class="btn icon" id="moneyness-time-reset-zoom" title="Reset zoom">⤾</button>
+              </div>
+            </header>
+            <div class="chart-legend" id="moneyness-time-legend"></div>
+            <div class="panel-body chart-body">
+              <canvas class="chart" id="chart-moneyness-time"></canvas>
+              <div class="chart-empty" id="chart-moneyness-time-empty">Select a VEV option to see moneyness over time.</div>
+            </div>
+          </section>
+
+          <section class="panel panel-iv-time" id="panel-iv-time">
+            <header class="panel-header">
+              <span id="iv-time-title">Implied Volatility vs Time</span>
+              <div class="panel-actions">
+                <div class="speed-group">
+                  <button class="speed-btn active" id="iv-time-mode-line">line</button>
+                  <button class="speed-btn" id="iv-time-mode-dot">dot</button>
+                </div>
+                <button class="btn icon" id="iv-time-reset-zoom" title="Reset zoom">⤾</button>
+              </div>
+            </header>
+            <div class="chart-legend" id="iv-time-legend"></div>
+            <div class="panel-body chart-body">
+              <canvas class="chart" id="chart-iv-time"></canvas>
+              <div class="chart-empty" id="chart-iv-time-empty">Select a VEV option to see IV over time.</div>
+            </div>
+          </section>
         </div>
       </main>
     </div>
     <div id="modal-root"></div>
-    <script type="module" src="./app.js"></script>
+    <script type="module" src="./app.js?v=8"></script>
   </body>
 </html>

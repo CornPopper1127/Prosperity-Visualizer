@@ -16,12 +16,15 @@ import { mountOrderBook } from "./js/panels/orderBook.js";
 import { mountPressure } from "./js/panels/pressure.js";
 import { mountOwnFills } from "./js/panels/ownFills.js";
 import { mountLogs } from "./js/panels/logs.js";
+import { mountMoneynessChart, mountVolSmileChart, mountMoneynessTimeChart, mountIVTimeChart } from "./js/panels/optionsAnalytics.js";
 import { showAboutModal } from "./js/panels/about.js";
 import { loadStrategies } from "./js/persistence.js";
 import { loadDemoLog } from "./js/demoLog.js";
 import { parseLogText } from "./js/parserClient.js";
 import { pickColor } from "./js/colors.js";
 import { uid } from "./js/uid.js";
+import { loadCsvData } from "./js/csvLoader.js";
+import { initLayout, restoreDefaultLayout } from "./js/panelLayout.js";
 
 const DEMO_LOADED_KEY = "openprosperity:demo-loaded:v1";
 
@@ -49,22 +52,48 @@ async function hydrate() {
 }
 
 async function maybeLoadDemo() {
-  if (getState().strategies.length > 0) return;
-  if (localStorage.getItem(DEMO_LOADED_KEY) === "1") return;
+  // Disabled — using CSV data source instead. Uncomment to re-enable.
+  // if (getState().strategies.length > 0) return;
+  // if (localStorage.getItem(DEMO_LOADED_KEY) === "1") return;
+  // try {
+  //   const text = await loadDemoLog();
+  //   if (getState().strategies.length > 0) return;
+  //   const strat = await parseLogText(text, {
+  //     id: uid("demo"),
+  //     name: "Demo — IMC Day 0 Sample",
+  //     color: pickColor([]),
+  //     filename: "demo.log",
+  //   });
+  //   addStrategy(strat);
+  //   localStorage.setItem(DEMO_LOADED_KEY, "1");
+  // } catch (err) {
+  //   console.warn("Demo load failed:", err);
+  // }
+}
+
+async function loadCsvDataSource() {
   try {
-    const text = await loadDemoLog();
-    if (getState().strategies.length > 0) return;
-    const strat = await parseLogText(text, {
-      id: uid("demo"),
-      name: "Demo — IMC Day 0 Sample",
-      color: pickColor([]),
-      filename: "demo.log",
-    });
-    addStrategy(strat);
-    localStorage.setItem(DEMO_LOADED_KEY, "1");
+    const strat = await loadCsvData(0);
+    // Replace any existing strategies (e.g. persisted demo) with CSV data
+    replaceStrategies([strat]);
   } catch (err) {
-    console.warn("Demo load failed:", err);
+    console.warn("CSV data load failed:", err);
   }
+}
+
+/** Inject a ▾ collapse toggle into every panel header automatically. */
+function initPanelCollapse() {
+  document.querySelectorAll(".panel").forEach((panel) => {
+    const header = panel.querySelector(".panel-header");
+    if (!header) return;
+    const btn = document.createElement("button");
+    btn.className = "panel-collapse-btn";
+    btn.title = "Collapse / expand";
+    btn.textContent = "▾";
+    btn.addEventListener("click", () => panel.classList.toggle("collapsed"));
+    // Insert as first child of header so it sits to the left of the title
+    header.insertBefore(btn, header.firstChild);
+  });
 }
 
 async function main() {
@@ -178,8 +207,55 @@ async function main() {
     tabsEl: $("panel-logs").querySelector(".tabs"),
   });
 
+  mountMoneynessChart({
+    canvasEl: $("chart-moneyness"),
+    emptyEl: $("chart-moneyness-empty"),
+    titleEl: $("moneyness-title"),
+    legendEl: $("moneyness-legend"),
+    premiumToggle: $("moneyness-premium"),
+    resetZoomBtn: $("moneyness-reset-zoom"),
+    paramsEl: $("moneyness-params"),
+  });
+
+  mountVolSmileChart({
+    canvasEl: $("chart-volsmile"),
+    emptyEl: $("chart-volsmile-empty"),
+    titleEl: $("volsmile-title"),
+    legendEl: $("volsmile-legend"),
+    resetZoomBtn: $("volsmile-reset-zoom"),
+    paramsEl: $("volsmile-params"),
+  });
+
+  mountMoneynessTimeChart({
+    canvasEl: $("chart-moneyness-time"),
+    emptyEl: $("chart-moneyness-time-empty"),
+    titleEl: $("moneyness-time-title"),
+    legendEl: $("moneyness-time-legend"),
+    premiumToggle: $("moneyness-time-premium"),
+    resetZoomBtn: $("moneyness-time-reset-zoom"),
+    modeLineBtn: $("moneyness-time-mode-line"),
+    modeDotBtn: $("moneyness-time-mode-dot"),
+  });
+
+  mountIVTimeChart({
+    canvasEl: $("chart-iv-time"),
+    emptyEl: $("chart-iv-time-empty"),
+    titleEl: $("iv-time-title"),
+    legendEl: $("iv-time-legend"),
+    resetZoomBtn: $("iv-time-reset-zoom"),
+    modeLineBtn: $("iv-time-mode-line"),
+    modeDotBtn: $("iv-time-mode-dot"),
+  });
+
+  initPanelCollapse();
+  initLayout();
+
+  // Wire up the restore-layout button
+  const restoreBtn = document.getElementById("restore-layout");
+  if (restoreBtn) restoreBtn.addEventListener("click", restoreDefaultLayout);
+
   await hydrate();
-  await maybeLoadDemo();
+  await loadCsvDataSource();
 }
 
 main().catch((err) => {
