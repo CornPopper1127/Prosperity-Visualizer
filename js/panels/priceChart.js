@@ -32,10 +32,14 @@ export function mountPriceChart({
   overlayCheck,
   joinGapsCheck,
   resetZoomBtn,
+  modeLineBtn,
+  modeDotBtn,
 }) {
   let chart = null;
   let lastKey = null;
   let currentLegend = [];
+  let showLine = true;
+  let showDot = false;
 
   levelsCheck.addEventListener("change", () =>
     setPrefs({ priceLevels: levelsCheck.checked })
@@ -65,6 +69,21 @@ export function mountPriceChart({
     setPrefs({ priceJoinGaps: joinGapsCheck.checked })
   );
   resetZoomBtn.addEventListener("click", () => chart?.resetXView());
+
+  modeLineBtn.classList.toggle("active", showLine);
+  modeDotBtn.classList.toggle("active", showDot);
+  modeLineBtn.addEventListener("click", () => {
+    showLine = !showLine;
+    modeLineBtn.classList.toggle("active", showLine);
+    lastKey = null;
+    render();
+  });
+  modeDotBtn.addEventListener("click", () => {
+    showDot = !showDot;
+    modeDotBtn.classList.toggle("active", showDot);
+    lastKey = null;
+    render();
+  });
 
   function ensureChart() {
     if (chart) return;
@@ -272,11 +291,30 @@ export function mountPriceChart({
       });
     }
 
+    const seriesOutput = [];
+    for (const s of series) {
+      if (showLine) {
+        seriesOutput.push(s);
+      } else {
+        seriesOutput.push({ ...s, width: 0, color: "transparent" });
+      }
+      if (showDot) {
+        markers.push({
+          name: s.name,
+          color: s.color,
+          shape: "dot",
+          size: 4,
+          xs: s.xs,
+          ys: s.ys,
+        });
+      }
+    }
+
     return {
       xFormat: (v) => Math.round(v).toLocaleString(),
       yFormat: (v) => v.toFixed(1),
       targetPoints: state.prefs.showSampled ? 1500 : Infinity,
-      series,
+      series: seriesOutput,
       markers,
     };
   }
@@ -326,6 +364,8 @@ export function mountPriceChart({
       !!state.prefs.priceBots,
       !!state.prefs.priceOverlayDays,
       state.prefs.priceJoinGaps !== false,
+      showLine,
+      showDot,
     ].join("|");
     if (key !== lastKey) {
       chart.setData(computeModel(state, ref, product));

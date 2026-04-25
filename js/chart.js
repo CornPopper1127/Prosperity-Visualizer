@@ -144,7 +144,31 @@ export function createChart(canvas, opts = {}) {
     if (!model || !model.series.length) return;
     const xmin = visibleXMin();
     const xmax = visibleXMax();
-    hoverLogicalX = xmin + ((px - plot.left) / plot.width) * (xmax - xmin);
+    const rawX = xmin + ((px - plot.left) / plot.width) * (xmax - xmin);
+
+    let closestX = null;
+    let minDist = Infinity;
+    const checkPoint = (x) => {
+      if (!Number.isFinite(x)) return;
+      const d = Math.abs(x - rawX);
+      if (d < minDist) {
+        minDist = d;
+        closestX = x;
+      }
+    };
+
+    if (model.series) {
+      for (const s of model.series) {
+        if (s.xs) for (let i = 0; i < s.xs.length; i++) checkPoint(s.xs[i]);
+      }
+    }
+    if (model.markers) {
+      for (const m of model.markers) {
+        if (m.xs) for (let i = 0; i < m.xs.length; i++) checkPoint(m.xs[i]);
+      }
+    }
+
+    hoverLogicalX = closestX !== null ? closestX : rawX;
     render();
   });
 

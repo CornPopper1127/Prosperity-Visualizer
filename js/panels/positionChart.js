@@ -14,10 +14,14 @@ export function mountPositionChart({
   legendEl,
   limitInput,
   resetZoomBtn,
+  modeLineBtn,
+  modeDotBtn,
 }) {
   let chart = null;
   let lastKey = null;
   let currentLegend = [];
+  let showLine = true;
+  let showDot = false;
 
   limitInput.addEventListener("change", (e) => {
     const state = getState();
@@ -28,6 +32,21 @@ export function mountPositionChart({
     setPositionLimit(ref.id, product, v);
   });
   resetZoomBtn.addEventListener("click", () => chart?.resetXView());
+
+  modeLineBtn.classList.toggle("active", showLine);
+  modeDotBtn.classList.toggle("active", showDot);
+  modeLineBtn.addEventListener("click", () => {
+    showLine = !showLine;
+    modeLineBtn.classList.toggle("active", showLine);
+    lastKey = null;
+    render();
+  });
+  modeDotBtn.addEventListener("click", () => {
+    showDot = !showDot;
+    modeDotBtn.classList.toggle("active", showDot);
+    lastKey = null;
+    render();
+  });
 
   function ensureChart() {
     if (chart) return;
@@ -92,11 +111,34 @@ export function mountPositionChart({
       add(s);
     }
     currentLegend = series.map((s) => ({ name: s.name, color: s.color }));
+    
+    const seriesOutput = [];
+    const markersOutput = [];
+    
+    for (const s of series) {
+      if (showLine) {
+        seriesOutput.push({ ...s });
+      } else {
+        seriesOutput.push({ ...s, width: 0, color: "transparent" });
+      }
+      if (showDot) {
+        markersOutput.push({
+          name: s.name,
+          color: s.color,
+          shape: "dot",
+          size: 4,
+          xs: s.xs,
+          ys: s.ys,
+        });
+      }
+    }
+
     return {
       xFormat: (v) => Math.round(v).toLocaleString(),
       yFormat: (v) => v.toFixed(0),
       targetPoints: state.prefs.showSampled ? 1200 : Infinity,
-      series,
+      series: seriesOutput,
+      markers: markersOutput,
       limitLines: [
         { value: limit, color: "rgba(244,63,94,0.6)", dash: [3, 3] },
         { value: -limit, color: "rgba(244,63,94,0.6)", dash: [3, 3] },
@@ -139,6 +181,8 @@ export function mountPositionChart({
       Array.from(state.comparingIds).join(","),
       state.strategies.length,
       limit,
+      showLine,
+      showDot,
     ].join("|");
     if (key !== lastKey) {
       chart.setData(computeModel(state, ref, product, limit));

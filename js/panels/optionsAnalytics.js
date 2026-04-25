@@ -82,10 +82,13 @@ function getOptionsData(ref, tickIdx) {
 export function mountMoneynessChart({
   canvasEl, emptyEl, titleEl, legendEl,
   premiumToggle, resetZoomBtn, paramsEl,
+  modeLineBtn, modeDotBtn,
 }) {
   let chart = null;
   let lastKey = null;
   let subtractPremium = false;
+  let showLine = true;
+  let showDot = true;
 
   premiumToggle.addEventListener("change", () => {
     subtractPremium = premiumToggle.checked;
@@ -93,6 +96,21 @@ export function mountMoneynessChart({
     render();
   });
   resetZoomBtn.addEventListener("click", () => chart?.resetXView());
+
+  modeLineBtn.classList.toggle("active", showLine);
+  modeDotBtn.classList.toggle("active", showDot);
+  modeLineBtn.addEventListener("click", () => {
+    showLine = !showLine;
+    modeLineBtn.classList.toggle("active", showLine);
+    lastKey = null;
+    render();
+  });
+  modeDotBtn.addEventListener("click", () => {
+    showDot = !showDot;
+    modeDotBtn.classList.toggle("active", showDot);
+    lastKey = null;
+    render();
+  });
 
   function ensureChart() {
     if (chart) return;
@@ -137,7 +155,7 @@ export function mountMoneynessChart({
     canvasEl.classList.remove("hidden");
     ensureChart();
 
-    const key = [state.tickIdx, subtractPremium].join("|");
+    const key = [state.tickIdx, subtractPremium, showLine, showDot].join("|");
     if (key !== lastKey) {
       const xs = [];
       const ys = [];
@@ -150,23 +168,21 @@ export function mountMoneynessChart({
         ys.push(moneyness);
       }
 
+      const seriesName = subtractPremium ? "Moneyness − Premium" : "Moneyness (Spot − Strike)";
       chart.setData({
         xFormat: (v) => v.toFixed(0),
         yFormat: (v) => v.toFixed(1),
         targetPoints: Infinity,
-        series: [{
-          name: subtractPremium ? "Moneyness − Premium" : "Moneyness (Spot − Strike)",
-          color: "#a78bfa",
-          xs, ys,
-          width: 2,
-        }],
-        markers: [{
+        series: showLine
+          ? [{ name: seriesName, color: "#a78bfa", xs, ys, width: 2 }]
+          : [{ name: "", color: "transparent", xs, ys, width: 0 }],
+        markers: showDot ? [{
           name: "Strikes",
           color: "#a78bfa",
           shape: "dot",
           size: 8,
           xs, ys,
-        }],
+        }] : [],
         limitLines: [{ value: 0, color: "#71717a", dash: [4, 4] }],
       });
       lastKey = key;
@@ -182,11 +198,29 @@ export function mountMoneynessChart({
 export function mountVolSmileChart({
   canvasEl, emptyEl, titleEl, legendEl,
   resetZoomBtn, paramsEl,
+  modeLineBtn, modeDotBtn,
 }) {
   let chart = null;
   let lastKey = null;
+  let showLine = true;
+  let showDot = true;
 
   resetZoomBtn.addEventListener("click", () => chart?.resetXView());
+
+  modeLineBtn.classList.toggle("active", showLine);
+  modeDotBtn.classList.toggle("active", showDot);
+  modeLineBtn.addEventListener("click", () => {
+    showLine = !showLine;
+    modeLineBtn.classList.toggle("active", showLine);
+    lastKey = null;
+    render();
+  });
+  modeDotBtn.addEventListener("click", () => {
+    showDot = !showDot;
+    modeDotBtn.classList.toggle("active", showDot);
+    lastKey = null;
+    render();
+  });
 
   function ensureChart() {
     if (chart) return;
@@ -235,7 +269,7 @@ export function mountVolSmileChart({
     canvasEl.classList.remove("hidden");
     ensureChart();
 
-    const key = [state.tickIdx].join("|");
+    const key = [state.tickIdx, showLine, showDot].join("|");
     if (key !== lastKey) {
       const xs = [];
       const ys = [];
@@ -252,19 +286,16 @@ export function mountVolSmileChart({
         xFormat: (v) => v.toFixed(0),
         yFormat: (v) => (v * 100).toFixed(1) + "%",
         targetPoints: Infinity,
-        series: [{
-          name: "Implied Volatility",
-          color: "#f59e0b",
-          xs, ys,
-          width: 2,
-        }],
-        markers: [{
+        series: showLine
+          ? [{ name: "Implied Volatility", color: "#f59e0b", xs, ys, width: 2 }]
+          : [{ name: "", color: "transparent", xs, ys, width: 0 }],
+        markers: showDot ? [{
           name: "IV",
           color: "#f59e0b",
           shape: "dot",
           size: 8,
           xs, ys,
-        }],
+        }] : [],
         // Anchor Y-axis to 0–100% so shape is comparable across timestamps.
         // Right-click the chart to reset zoom.
         limitLines: [
@@ -336,24 +367,30 @@ export function mountMoneynessTimeChart({
   let chart = null;
   let lastKey = null;
   let subtractPremium = false;
-  let dotMode = false;
-
-  function setMode(dot) {
-    dotMode = dot;
-    modeLineBtn.classList.toggle("active", !dot);
-    modeDotBtn.classList.toggle("active", dot);
-    lastKey = null;
-    render();
-  }
+  let showLine = true;
+  let showDot = false;
 
   premiumToggle.addEventListener("change", () => {
     subtractPremium = premiumToggle.checked;
     lastKey = null;
     render();
   });
-  modeLineBtn.addEventListener("click", () => setMode(false));
-  modeDotBtn.addEventListener("click",  () => setMode(true));
   resetZoomBtn.addEventListener("click", () => chart?.resetXView());
+
+  modeLineBtn.classList.toggle("active", showLine);
+  modeDotBtn.classList.toggle("active", showDot);
+  modeLineBtn.addEventListener("click", () => {
+    showLine = !showLine;
+    modeLineBtn.classList.toggle("active", showLine);
+    lastKey = null;
+    render();
+  });
+  modeDotBtn.addEventListener("click", () => {
+    showDot = !showDot;
+    modeDotBtn.classList.toggle("active", showDot);
+    lastKey = null;
+    render();
+  });
 
   function ensureChart() {
     if (chart) return;
@@ -389,7 +426,7 @@ export function mountMoneynessTimeChart({
     canvasEl.classList.remove("hidden");
     ensureChart();
 
-    const key = `${ref.id}|${product}|${subtractPremium}|${dotMode}`;
+    const key = `${ref.id}|${product}|${subtractPremium}|${showLine}|${showDot}`;
     if (key !== lastKey) {
       const { xs, ys } = buildMoneynessTimeSeries(ref, strike, subtractPremium);
       const seriesName = subtractPremium ? "Moneyness − Premium" : "Moneyness (Spot − Strike)";
@@ -397,10 +434,10 @@ export function mountMoneynessTimeChart({
         xFormat: (v) => Math.round(v).toLocaleString(),
         yFormat: (v) => v.toFixed(1),
         targetPoints: 2000,
-        series: dotMode
-          ? [{ name: "", color: "transparent", xs, ys, width: 0 }]  // anchor X range
-          : [{ name: seriesName, color: "#a78bfa", xs, ys, width: 1.5 }],
-        markers: dotMode ? [{
+        series: showLine
+          ? [{ name: seriesName, color: "#a78bfa", xs, ys, width: 1.5 }]
+          : [{ name: "", color: "transparent", xs, ys, width: 0 }],  // anchor X range
+        markers: showDot ? [{
           name: seriesName,
           color: "#a78bfa",
           shape: "dot",
@@ -426,19 +463,25 @@ export function mountIVTimeChart({
 }) {
   let chart = null;
   let lastKey = null;
-  let dotMode = false;
+  let showLine = true;
+  let showDot = false;
 
-  function setMode(dot) {
-    dotMode = dot;
-    modeLineBtn.classList.toggle("active", !dot);
-    modeDotBtn.classList.toggle("active", dot);
+  resetZoomBtn.addEventListener("click", () => chart?.resetXView());
+
+  modeLineBtn.classList.toggle("active", showLine);
+  modeDotBtn.classList.toggle("active", showDot);
+  modeLineBtn.addEventListener("click", () => {
+    showLine = !showLine;
+    modeLineBtn.classList.toggle("active", showLine);
     lastKey = null;
     render();
-  }
-
-  modeLineBtn.addEventListener("click", () => setMode(false));
-  modeDotBtn.addEventListener("click",  () => setMode(true));
-  resetZoomBtn.addEventListener("click", () => chart?.resetXView());
+  });
+  modeDotBtn.addEventListener("click", () => {
+    showDot = !showDot;
+    modeDotBtn.classList.toggle("active", showDot);
+    lastKey = null;
+    render();
+  });
 
   function ensureChart() {
     if (chart) return;
@@ -474,17 +517,17 @@ export function mountIVTimeChart({
     canvasEl.classList.remove("hidden");
     ensureChart();
 
-    const key = `${ref.id}|${product}|${dotMode}`;
+    const key = `${ref.id}|${product}|${showLine}|${showDot}`;
     if (key !== lastKey) {
       const { xs, ys } = buildIVTimeSeries(ref, strike);
       chart.setData({
         xFormat: (v) => Math.round(v).toLocaleString(),
         yFormat: (v) => (v * 100).toFixed(1) + "%",
         targetPoints: 2000,
-        series: dotMode
-          ? [{ name: "", color: "transparent", xs, ys, width: 0 }]  // anchor X range
-          : [{ name: "Implied Volatility", color: "#f59e0b", xs, ys, width: 1.5 }],
-        markers: dotMode ? [{
+        series: showLine
+          ? [{ name: "Implied Volatility", color: "#f59e0b", xs, ys, width: 1.5 }]
+          : [{ name: "", color: "transparent", xs, ys, width: 0 }],  // anchor X range
+        markers: showDot ? [{
           name: "Implied Volatility",
           color: "#f59e0b",
           shape: "dot",

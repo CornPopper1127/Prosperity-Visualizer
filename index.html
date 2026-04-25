@@ -112,6 +112,10 @@
                 <label class="check small"><input type="checkbox" id="pnl-norm" /> normalize x</label>
                 <label class="check small"><input type="checkbox" id="pnl-diff" /> diff vs ref</label>
                 <label class="check small"><input type="checkbox" id="pnl-sampled" checked /> sampled</label>
+                <div class="speed-group">
+                  <button class="speed-btn active" id="pnl-mode-line">line</button>
+                  <button class="speed-btn" id="pnl-mode-dot">dot</button>
+                </div>
                 <button class="btn icon" id="pnl-reset-zoom" title="Reset zoom">⤾</button>
                 <button class="btn icon" id="pnl-export" title="Export PNG">⤓</button>
               </div>
@@ -146,6 +150,10 @@
                 <label class="check small"><input type="checkbox" id="price-bots" /> bots</label>
                 <label class="check small"><input type="checkbox" id="price-overlay" /> overlay days</label>
                 <label class="check small"><input type="checkbox" id="price-join-gaps" checked /> join gaps</label>
+                <div class="speed-group">
+                  <button class="speed-btn active" id="price-mode-line">line</button>
+                  <button class="speed-btn" id="price-mode-dot">dot</button>
+                </div>
                 <button class="btn icon" id="price-reset-zoom" title="Reset zoom">⤾</button>
               </div>
             </header>
@@ -177,6 +185,10 @@
               <span id="position-title">Position</span>
               <div class="panel-actions">
                 <label class="check small position-limit-wrap">limit ±<input type="number" id="position-limit" min="1" max="9999" class="input tiny-num" /></label>
+                <div class="speed-group">
+                  <button class="speed-btn active" id="position-mode-line">line</button>
+                  <button class="speed-btn" id="position-mode-dot">dot</button>
+                </div>
                 <button class="btn icon" id="position-reset-zoom" title="Reset zoom">⤾</button>
               </div>
             </header>
@@ -214,6 +226,10 @@
               <div class="panel-actions">
                 <div class="bs-params" id="moneyness-params"></div>
                 <label class="check small"><input type="checkbox" id="moneyness-premium" /> subtract premium</label>
+                <div class="speed-group">
+                  <button class="speed-btn active" id="moneyness-mode-line">line</button>
+                  <button class="speed-btn" id="moneyness-mode-dot">dot</button>
+                </div>
                 <button class="btn icon" id="moneyness-reset-zoom" title="Reset zoom">⤾</button>
               </div>
             </header>
@@ -229,6 +245,10 @@
               <span id="volsmile-title">Implied Volatility Smile · VEV Options</span>
               <div class="panel-actions">
                 <div class="bs-params" id="volsmile-params"></div>
+                <div class="speed-group">
+                  <button class="speed-btn active" id="volsmile-mode-line">line</button>
+                  <button class="speed-btn" id="volsmile-mode-dot">dot</button>
+                </div>
                 <button class="btn icon" id="volsmile-reset-zoom" title="Reset zoom">⤾</button>
               </div>
             </header>
@@ -279,6 +299,6 @@
       </main>
     </div>
     <div id="modal-root"></div>
-    <script type="module" src="./app.js?v=8"></script>
+    <script type="module" src="./app.js?v=10"></script>
   </body>
 </html>

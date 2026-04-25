@@ -19,10 +19,14 @@ export function mountPnlChart({
   sampledCheck,
   exportBtn,
   resetZoomBtn,
+  modeLineBtn,
+  modeDotBtn,
 }) {
   let chart = null;
   let lastKey = null;
   let currentSeriesForLegend = [];
+  let showLine = true;
+  let showDot = false;
 
   normCheck.addEventListener("change", () =>
     setPrefs({ normalizedX: normCheck.checked })
@@ -37,6 +41,21 @@ export function mountPnlChart({
     downloadCanvasPng(canvasEl, "pnl-performance.png");
   });
   resetZoomBtn.addEventListener("click", () => chart?.resetXView());
+
+  modeLineBtn.classList.toggle("active", showLine);
+  modeDotBtn.classList.toggle("active", showDot);
+  modeLineBtn.addEventListener("click", () => {
+    showLine = !showLine;
+    modeLineBtn.classList.toggle("active", showLine);
+    lastKey = null;
+    render();
+  });
+  modeDotBtn.addEventListener("click", () => {
+    showDot = !showDot;
+    modeDotBtn.classList.toggle("active", showDot);
+    lastKey = null;
+    render();
+  });
 
   function ensureChart() {
     if (chart) return;
@@ -155,6 +174,28 @@ export function mountPnlChart({
     }
     currentSeriesForLegend = series.map((s) => ({ name: s.name, color: s.color }));
 
+    const seriesOutput = [];
+    const markersOutput = [];
+    
+    for (const s of series) {
+      if (showLine) {
+        seriesOutput.push({ ...s });
+      } else {
+        // anchor X range when lines are off
+        seriesOutput.push({ ...s, color: "transparent", width: 0 });
+      }
+      if (showDot) {
+        markersOutput.push({
+          name: s.name,
+          color: s.color,
+          shape: "dot",
+          size: 4,
+          xs: s.xs,
+          ys: s.ys,
+        });
+      }
+    }
+
     return {
       xFormat: (v) =>
         prefs.normalizedX
@@ -163,7 +204,8 @@ export function mountPnlChart({
       yFormat: (v) =>
         Math.abs(v) >= 1000 ? (v / 1000).toFixed(1) + "k" : v.toFixed(0),
       targetPoints: prefs.showSampled ? TARGET_POINTS : Infinity,
-      series,
+      series: seriesOutput,
+      markers: markersOutput,
     };
   }
 
@@ -203,7 +245,8 @@ export function mountPnlChart({
       "|" +
       state.prefs.showSampled +
       "|" +
-      (state.selectedProduct ?? "");
+      (state.selectedProduct ?? "") +
+      "|" + showLine + "|" + showDot;
     if (key !== lastKey) {
       chart.setData(computeModel(state));
       lastKey = key;

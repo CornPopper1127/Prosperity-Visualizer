@@ -149,6 +149,8 @@ async function main() {
     sampledCheck: $("pnl-sampled"),
     exportBtn: $("pnl-export"),
     resetZoomBtn: $("pnl-reset-zoom"),
+    modeLineBtn: $("pnl-mode-line"),
+    modeDotBtn: $("pnl-mode-dot"),
   });
 
   mountSummary({
@@ -171,6 +173,8 @@ async function main() {
     overlayCheck: $("price-overlay"),
     joinGapsCheck: $("price-join-gaps"),
     resetZoomBtn: $("price-reset-zoom"),
+    modeLineBtn: $("price-mode-line"),
+    modeDotBtn: $("price-mode-dot"),
   });
 
   mountOrderBook({
@@ -192,6 +196,8 @@ async function main() {
     legendEl: $("position-legend"),
     limitInput: $("position-limit"),
     resetZoomBtn: $("position-reset-zoom"),
+    modeLineBtn: $("position-mode-line"),
+    modeDotBtn: $("position-mode-dot"),
   });
 
   mountOwnFills({
@@ -215,6 +221,8 @@ async function main() {
     premiumToggle: $("moneyness-premium"),
     resetZoomBtn: $("moneyness-reset-zoom"),
     paramsEl: $("moneyness-params"),
+    modeLineBtn: $("moneyness-mode-line"),
+    modeDotBtn: $("moneyness-mode-dot"),
   });
 
   mountVolSmileChart({
@@ -224,6 +232,8 @@ async function main() {
     legendEl: $("volsmile-legend"),
     resetZoomBtn: $("volsmile-reset-zoom"),
     paramsEl: $("volsmile-params"),
+    modeLineBtn: $("volsmile-mode-line"),
+    modeDotBtn: $("volsmile-mode-dot"),
   });
 
   mountMoneynessTimeChart({
