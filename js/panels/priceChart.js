@@ -284,29 +284,37 @@ export function mountPriceChart({
     const ownBuysYs = [];
     const ownSellsXs = [];
     const ownSellsYs = [];
-    const botXs = [];
-    const botYs = [];
+    
+    // Group bot trades by ID if filter is enabled
+    const botTradesById = new Map();
+    const botFilterEnabled = !!state.prefs.botFilterEnabled;
+    const selectedBotIds = state.prefs.selectedBotIds || [];
+
     for (const t of ref.trades) {
       if (t.symbol !== product) continue;
-      // Overlay mode: x becomes raw ts and root-style prices shift down
-      // by day*offset so markers land on the overlaid price line.
       const x = overlay ? t.timestamp : (t.tickKey ?? t.timestamp);
       const y = overlay && dayOffset ? t.price - (t.day ?? 0) * dayOffset : t.price;
-      const isBuy = t.buyer === "SUBMISSION";
-      const isSell = t.seller === "SUBMISSION";
-      if (isBuy) {
+      
+      if (t.buyer === "SUBMISSION") {
         ownBuysXs.push(x);
         ownBuysYs.push(y);
-      } else if (isSell) {
+      } else if (t.seller === "SUBMISSION") {
         ownSellsXs.push(x);
         ownSellsYs.push(y);
       } else {
-        botXs.push(x);
-        botYs.push(y);
+        const botId = t.buyer.toLowerCase().startsWith("mark ") ? t.buyer : (t.seller.toLowerCase().startsWith("mark ") ? t.seller : "Other Bots");
+        
+        if (botFilterEnabled && botId.toLowerCase().startsWith("mark ") && !selectedBotIds.includes(botId)) {
+          continue; 
+        }
+
+        if (!botTradesById.has(botId)) botTradesById.set(botId, { xs: [], ys: [] });
+        const group = botTradesById.get(botId);
+        group.xs.push(x);
+        group.ys.push(y);
       }
     }
-    // Own trades get a fat, high-contrast style so they jump out of
-    // the noisy line series: larger shape, dark outline, bright fill.
+
     if (state.prefs.priceBuys)
       markers.push({
         name: "Own buys",
@@ -327,16 +335,31 @@ export function mountPriceChart({
         xs: ownSellsXs,
         ys: ownSellsYs,
       });
-    if (state.prefs.priceBots)
-      markers.push({
-        name: "Bot trades",
-        color: "#d4d4d8",
-        outline: "#18181b",
-        shape: "dot",
-        size: 7,
-        xs: botXs,
-        ys: botYs,
-      });
+
+    if (state.prefs.priceBots) {
+      const botColors = [
+        "#f472b6", "#fb923c", "#facc15", "#4ade80", "#22d3ee", "#a78bfa",
+        "#ec4899", "#f97316", "#eab308", "#22c55e", "#06b6d4", "#8b5cf6"
+      ];
+      let colorIdx = 0;
+      
+      for (const [botId, group] of botTradesById.entries()) {
+        const isSelectedBot = botId.toLowerCase().startsWith("mark ");
+        const color = isSelectedBot 
+          ? botColors[colorIdx++ % botColors.length]
+          : "#d4d4d8";
+          
+        markers.push({
+          name: botId,
+          color: color,
+          outline: isSelectedBot ? "#00000066" : "#18181b",
+          shape: "dot",
+          size: isSelectedBot ? 8 : 6,
+          xs: group.xs,
+          ys: group.ys,
+        });
+      }
+    }
 
     if (state.prefs.priceMo && product === "HYDROGEL_PACK") {
       const buyXs = [], buyYs = [];
@@ -490,6 +513,8 @@ export function mountPriceChart({
       !!state.prefs.priceBuys,
       !!state.prefs.priceSells,
       !!state.prefs.priceBots,
+      !!state.prefs.botFilterEnabled,
+      (state.prefs.selectedBotIds || []).join(","),
       !!state.prefs.priceMo,
       state.prefs.priceBidAsk !== false,
       state.prefs.zScoreSigma1 !== false,

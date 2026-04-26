@@ -11,7 +11,7 @@ import { buildLimits } from "./positionLimits.js";
 import { uid } from "./uid.js";
 import { pickColor } from "./colors.js";
 
-const ROUND = 3;
+
 
 function tickKeyOf(day, ts) {
   return (Number.isFinite(day) ? day : 0) * DAY_STRIDE + ts;
@@ -292,9 +292,8 @@ function buildCsvStrategy(priceRows, rawTrades, dayNum) {
   return {
     id: uid("csv"),
     submissionId: null,
-    name: `CSV · Round ${ROUND} Day ${dayNum}`,
-    color: pickColor([]),
-    filename: `prices_round_${ROUND}_day_${dayNum}.csv`,
+    name: "", // Set by loader
+    filename: "", // Set by loader
     timestamps,
     rawTimestamps,
     days,
@@ -304,6 +303,15 @@ function buildCsvStrategy(priceRows, rawTrades, dayNum) {
     rawLogs: [],
     ownFills: [],
     trades: tradesSorted,
+    availableBots: Array.from(new Set(
+      tradesSorted
+        .flatMap(t => [t.buyer, t.seller])
+        .filter(id => id?.toLowerCase().startsWith("mark "))
+    )).sort((a, b) => {
+      const na = parseInt(a.toLowerCase().replace("mark ", ""), 10);
+      const nb = parseInt(b.toLowerCase().replace("mark ", ""), 10);
+      return na - nb;
+    }),
     logIndexByTick: {},
     positionLimits: buildLimits(products),
     summary,
@@ -314,13 +322,13 @@ function buildCsvStrategy(priceRows, rawTrades, dayNum) {
 /**
  * Load a single day's CSV data files and return a strategy object.
  */
-export async function loadCsvData(day = 0) {
+export async function loadCsvData(round = 3, day = 0) {
   const [pricesResp, tradesResp] = await Promise.all([
-    fetch(`./eda/prices_round_${ROUND}_day_${day}.csv`),
-    fetch(`./eda/trades_round_${ROUND}_day_${day}.csv`),
+    fetch(`./eda/prices_round_${round}_day_${day}.csv`),
+    fetch(`./eda/trades_round_${round}_day_${day}.csv`),
   ]);
-  if (!pricesResp.ok) throw new Error(`Prices CSV day ${day}: HTTP ${pricesResp.status}`);
-  if (!tradesResp.ok) throw new Error(`Trades CSV day ${day}: HTTP ${tradesResp.status}`);
+  if (!pricesResp.ok) throw new Error(`Prices CSV Round ${round} Day ${day}: HTTP ${pricesResp.status}`);
+  if (!tradesResp.ok) throw new Error(`Trades CSV Round ${round} Day ${day}: HTTP ${tradesResp.status}`);
 
   const [pricesText, tradesText] = await Promise.all([
     pricesResp.text(),
@@ -329,20 +337,23 @@ export async function loadCsvData(day = 0) {
 
   const priceRows = parsePricesCsv(pricesText);
   const tradeRows = parseTradesCsv(tradesText);
-  return buildCsvStrategy(priceRows, tradeRows, day);
+  const strat = buildCsvStrategy(priceRows, tradeRows, day);
+  strat.round = round;
+  strat.name = `CSV · Round ${round} Day ${day}`;
+  strat.filename = `prices_round_${round}_day_${day}.csv`;
+  return strat;
 }
 
 /**
  * Load multiple days in parallel.  Returns an array of strategy objects in
- * the order requested, silently dropping any day that fails to fetch (so a
- * missing file doesn't break the whole dashboard).
+ * the order requested.
  */
-export async function loadAllCsvDays(days = [0, 1, 2]) {
-  const results = await Promise.allSettled(days.map((d) => loadCsvData(d)));
+export async function loadAllCsvDays(round = 3, days = [0, 1, 2]) {
+  const results = await Promise.allSettled(days.map((d) => loadCsvData(round, d)));
   return results
     .map((r, i) => {
       if (r.status === "fulfilled") return r.value;
-      console.warn(`Day ${days[i]} CSV failed:`, r.reason);
+      console.warn(`Round ${round} Day ${days[i]} CSV failed:`, r.reason);
       return null;
     })
     .filter(Boolean);

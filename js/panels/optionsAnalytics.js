@@ -146,10 +146,11 @@ export function mountMoneynessChart({
     const state = getState();
     const ref = getReference(state);
     const dayNum = ref?.days?.[state.tickIdx] ?? 0;
+    const roundNum = ref?.round ?? 3;
 
     titleEl.textContent = "Moneyness · VEV Options";
     paramsEl.innerHTML = `<span class="param-pill">Type: ${bsParams.optionType}</span>
-      <span class="param-pill">Day: ${dayNum}</span>
+      <span class="param-pill">R${roundNum} Day ${dayNum}</span>
       <span class="param-pill">TTE: ${TTE_BASE_DAYS - dayNum}d</span>`;
 
     if (!ref) {
@@ -256,6 +257,7 @@ export function mountVolSmileChart({
     const state = getState();
     const ref = getReference(state);
     const dayNum = ref?.days?.[state.tickIdx] ?? 0;
+    const roundNum = ref?.round ?? 3;
     const ts = ref?.rawTimestamps?.[state.tickIdx] ?? 0;
     const tte = TTE_BASE_DAYS - dayNum - (ts / 1000000);
     const T = tte / 365; // Annualized perspective (365 days)
@@ -264,7 +266,7 @@ export function mountVolSmileChart({
     paramsEl.innerHTML = `<span class="param-pill">r: ${(bsParams.riskFreeRate * 100).toFixed(1)}%</span>
       <span class="param-pill">q: ${(bsParams.dividendYield * 100).toFixed(1)}%</span>
       <span class="param-pill">Type: ${bsParams.optionType}</span>
-      <span class="param-pill">Day: ${dayNum}</span>
+      <span class="param-pill">R${roundNum} Day ${dayNum}</span>
       <span class="param-pill">TTE: ${tte.toFixed(3)}d (${T.toFixed(4)}y)</span>`;
 
     if (!ref) {

@@ -20,6 +20,8 @@ function defaultPrefs() {
     diffMode: false,
     normalizedX: false,
     showSampled: true,
+    botFilterEnabled: false,
+    selectedBotIds: [],
   };
 }
 
@@ -45,6 +47,7 @@ let state = {
   logTab: "lambda",
   fillsShowAll: false,
   fillsCurrentOnly: true,
+  availableBots: [],
 };
 
 const listeners = new Set();

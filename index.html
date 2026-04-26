@@ -32,11 +32,18 @@
           <input type="file" id="file-input" accept=".log,.json,application/json" multiple hidden />
         </div>
 
+        <div class="day-tabs" id="round-tabs">
+          <span class="day-tabs-label">Round</span>
+          <button class="day-tab active" data-round="3">3</button>
+          <button class="day-tab" data-round="4">4</button>
+        </div>
+
         <div class="day-tabs" id="day-tabs">
           <span class="day-tabs-label">Day</span>
-          <button class="day-tab active" data-day="0">0</button>
+          <button class="day-tab" data-day="0">0</button>
           <button class="day-tab" data-day="1">1</button>
           <button class="day-tab" data-day="2">2</button>
+          <button class="day-tab" data-day="3">3</button>
         </div>
 
         <div class="parse-progress hidden" id="parse-progress">
@@ -100,6 +107,13 @@
             <select class="input" id="product-select" disabled>
               <option value="">All products</option>
             </select>
+            <div class="sep"></div>
+            <label class="check small" title="Show only trades involving specific bots">
+              <input type="checkbox" id="bot-filter-toggle" /> Bot Filter
+            </label>
+            <div id="bot-filter-wrap" class="hidden">
+              <button class="btn tiny" id="bot-select-btn">Select Bots <span id="bot-count-label"></span></button>
+            </div>
             <span class="status-pill right">
               <span class="status-dot"></span> Local-only · No uploads
             </span>

@@ -23,6 +23,10 @@ export function mountTopBar({
   productSelect,
   themeBtn,
   aboutBtn,
+  botFilterToggle,
+  botFilterWrap,
+  botSelectBtn,
+  botCountLabel,
   onShowAbout,
 }) {
   // Playback loop — setInterval-based (more predictable than rAF under
@@ -170,6 +174,7 @@ export function mountTopBar({
 
   let lastProducts = null;
   let lastRefId = null;
+
   function render() {
     const state = getState();
     const ref = getReference(state);
@@ -229,6 +234,17 @@ export function mountTopBar({
     productSelect.value = state.selectedProduct ?? "";
     productSelect.disabled = !ref;
 
+    // Bot Filter UI
+    const isRound4 = ref?.round === 4;
+    botFilterToggle.closest('label').classList.toggle('hidden', !isRound4);
+    botFilterToggle.checked = !!state.prefs.botFilterEnabled;
+    botFilterWrap.classList.toggle('hidden', !isRound4 || !state.prefs.botFilterEnabled);
+    
+    if (isRound4 && state.prefs.botFilterEnabled) {
+      const count = (state.prefs.selectedBotIds || []).length;
+      botCountLabel.textContent = count > 0 ? `(${count})` : "";
+    }
+
     // Theme
     themeBtn.textContent = state.prefs.theme === "dark" ? "☀" : "☾";
 
@@ -239,4 +255,60 @@ export function mountTopBar({
 
   subscribe(render);
   render();
+
+  // Bot Filter Events
+  botFilterToggle.addEventListener("change", () => {
+    setPrefs({ botFilterEnabled: botFilterToggle.checked });
+  });
+
+  botSelectBtn.addEventListener("click", () => {
+    const state = getState();
+    const ref = getReference(state);
+    if (!ref) return;
+
+    const bots = ref.availableBots || [];
+    const selected = state.prefs.selectedBotIds || [];
+
+    const modal = document.createElement("div");
+    modal.className = "modal-overlay";
+    modal.innerHTML = `
+      <div class="modal bot-modal">
+        <header class="modal-header">
+          <h3>Select Bots</h3>
+          <button class="btn icon close-modal">×</button>
+        </header>
+        <div class="modal-body">
+          <div class="bot-grid">
+            ${bots.map(b => `
+              <label class="bot-item">
+                <input type="checkbox" value="${b}" ${selected.includes(b) ? 'checked' : ''} />
+                <span>${b}</span>
+              </label>
+            `).join("")}
+          </div>
+        </div>
+        <footer class="modal-footer">
+          <button class="btn clear-bots">Clear All</button>
+          <button class="btn select-all-bots">Select All</button>
+          <button class="btn primary save-bots">Apply</button>
+        </footer>
+      </div>
+    `;
+
+    document.getElementById("modal-root").appendChild(modal);
+
+    const close = () => modal.remove();
+    modal.querySelector(".close-modal").addEventListener("click", close);
+    modal.querySelector(".save-bots").addEventListener("click", () => {
+      const checked = Array.from(modal.querySelectorAll("input:checked")).map(i => i.value);
+      setPrefs({ selectedBotIds: checked });
+      close();
+    });
+    modal.querySelector(".clear-bots").addEventListener("click", () => {
+      modal.querySelectorAll("input").forEach(i => i.checked = false);
+    });
+    modal.querySelector(".select-all-bots").addEventListener("click", () => {
+      modal.querySelectorAll("input").forEach(i => i.checked = true);
+    });
+  });
 }

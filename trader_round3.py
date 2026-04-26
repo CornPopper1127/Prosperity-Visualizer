@@ -1,145 +1,148 @@
-import math
 import json
-from typing import List, Dict
-from datamodel import OrderDepth, TradingState, Order
+from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder, Symbol, Trade, TradingState
+from typing import Any, List, Dict
+import math
+
+class Logger:
+    def __init__(self) -> None:
+        self.logs = ""
+        self.max_log_length = 3750
+
+    def print(self, *objects: Any, sep: str = " ", end: str = "\n") -> None:
+        self.logs += sep.join(map(str, objects)) + end
+
+    def flush(self, state: TradingState, orders: dict[Symbol, list[Order]], conversions: int, trader_data: str) -> None:
+        base_length = len(self.to_json([
+            self.compress_state(state, ""),
+            self.compress_orders(orders),
+            conversions,
+            "",
+            "",
+        ]))
+
+        assert base_length < 4000, "Base output is too large."
+
+        truncated = self.logs[:self.max_log_length]
+        print(self.to_json([
+            self.compress_state(state, trader_data),
+            self.compress_orders(orders),
+            conversions,
+            "",
+            truncated,
+        ]))
+        self.logs = ""
+
+    def compress_state(self, state: TradingState, trader_data: str) -> list[Any]:
+        return [
+            state.timestamp,
+            trader_data,
+            self.compress_listings(state.listings),
+            self.compress_order_depths(state.order_depths),
+            self.compress_trades(state.own_trades),
+            self.compress_trades(state.market_trades),
+            state.position,
+            self.compress_observations(state.observations),
+        ]
+
+    def compress_listings(self, listings: dict[Symbol, Listing]) -> list[list[Any]]:
+        return [[listing.symbol, listing.product, listing.denomination] for listing in listings.values()]
+
+    def compress_order_depths(self, order_depths: dict[Symbol, OrderDepth]) -> dict[Symbol, list[Any]]:
+        return {symbol: [depth.buy_orders, depth.sell_orders] for symbol, depth in order_depths.items()}
+
+    def compress_trades(self, trades: dict[Symbol, list[Trade]]) -> list[list[Any]]:
+        compressed = []
+        for arr in trades.values():
+            for trade in arr:
+                compressed.append([
+                    trade.symbol,
+                    trade.price,
+                    trade.quantity,
+                    trade.buyer,
+                    trade.seller,
+                    trade.timestamp,
+                ])
+        return compressed
+
+    def compress_observations(self, observations: Observation) -> list[Any]:
+        conversion_observations = {}
+        for product, observation in observations.conversionObservations.items():
+            conversion_observations[product] = [
+                observation.bidPrice,
+                observation.askPrice,
+                observation.transportFees,
+                observation.exportTariff,
+                observation.importTariff,
+                observation.sunlight,
+                observation.humidity,
+            ]
+        return [observations.plainValueObservations, conversion_observations]
+
+    def compress_orders(self, orders: dict[Symbol, list[Order]]) -> list[list[Any]]:
+        compressed = []
+        for arr in orders.values():
+            for order in arr:
+                compressed.append([order.symbol, order.price, order.quantity])
+        return compressed
+
+    def to_json(self, value: Any) -> str:
+        return json.dumps(value, cls=ProsperityEncoder, separators=(",", ":"))
+
+logger = Logger()
 
 class Trader:
-    # ── Position limits ──────────────────────────────────────────────────────
-    POSITION_LIMITS = {
-        'VELVETFRUIT_EXTRACT': 200,
-        'HYDROGEL_PACK': 200,
-        'VEV_4000': 300,
-        'VEV_4500': 300,
-        'VEV_5000': 300,
-        'VEV_5100': 300,
-        'VEV_5200': 300,
-        'VEV_5300': 300,
-        'VEV_5400': 300,
-        'VEV_5500': 300,
-        'VEV_6000': 300,
-        'VEV_6500': 300,
-    }
+    # Defining constants
+    HYDROGEL = "HYDROGEL_PACK"
+    
+    def __init__(self):
+        # State tracking for Sniper Trapper logic
+        self.prev_hydro_spread = 16
+        self.prev_hydro_mid = 0
+        self.min_green_buy_price = float('inf')
+    
+    POS_LIMIT_UNDERLYING = 200
 
-    # ── Tunable Parameters (Safest Configuration) ───────────────────────────
-    PREMIUM_EMA_WINDOW = 200   # Longer window for extreme stability
-    TAKER_THRESHOLD    = 3.5   # High threshold: Only "snatch" massive mispricings
-    HEDGE_IV_CONSTANT  = 0.18  # Stable IV for delta calculation
-    HEDGE_VOL_THRESHOLD = 15   # Only hedge if delta imbalance is > 15
-    MAX_SPOT_SPREAD     = 3    # Only hedge when the "narrowing bot" is active
-
-    def norm_cdf(self, x: float) -> float:
-        return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
-
-    def bs_delta(self, S: float, K: float, T: float, r: float, sigma: float) -> float:
-        if T <= 0 or sigma <= 0:
-            return 1.0 if S > K else 0.0
-        d1 = (math.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * math.sqrt(T))
-        return self.norm_cdf(d1)
-
-    def calculate_ema(self, ema_dict: dict, key: str, window: int, value: float) -> float:
-        old = ema_dict.get(key, value)
-        alpha = 2.0 / (window + 1)
-        new = alpha * value + (1.0 - alpha) * old
-        ema_dict[key] = new
-        return new
-
-    def run(self, state: TradingState):
-        result = {}
+    def run(self, state: TradingState) -> tuple[dict[Symbol, list[Order]], int, str]:
+        orders: dict[Symbol, list[Order]] = {}
         conversions = 0
-
-        # ── Load State ────────────────────────────────────────────────────────
-        try:
-            saved = json.loads(state.traderData)
-            ema_dict = saved.get('ema', {})
-        except Exception:
-            ema_dict = {}
-
-        # ── 1. Spot Market Context ────────────────────────────────────────────
-        spot_product = 'VELVETFRUIT_EXTRACT'
-        if spot_product not in state.order_depths:
-            return result, conversions, state.traderData
-
-        s_depth = state.order_depths[spot_product]
-        if not s_depth.buy_orders or not s_depth.sell_orders:
-            return result, conversions, state.traderData
-
-        s_bid = max(s_depth.buy_orders.keys())
-        s_ask = min(s_depth.sell_orders.keys())
-        s_mid = (s_bid + s_ask) / 2.0
-        s_spread = s_ask - s_bid
+        trader_data = state.traderData
         
-        spot_pos = state.position.get(spot_product, 0)
-        spot_limit = self.POSITION_LIMITS[spot_product]
-
-        # TTE
-        tte_days = 5.0 - (state.timestamp / 1_000_000.0)
-        TTE = max(tte_days / 365.0, 1e-6)
-
-        option_symbols = [f'VEV_{k}' for k in [4000, 4500, 5000, 5100, 5200, 5300, 5400, 5500, 6000, 6500]]
-        
-        total_delta = 0.0
-
-        # ── 2. Option Sniper (Taker Only) ─────────────────────────────────────
-        for sym in option_symbols:
-            if sym not in state.order_depths: continue
-            depth = state.order_depths[sym]
-            if not depth.buy_orders or not depth.sell_orders: continue
-
-            K = float(sym.split('_')[1])
-            best_bid = max(depth.buy_orders.keys())
-            best_ask = min(depth.sell_orders.keys())
-            call_mid = (best_bid + best_ask) / 2.0
-            pos = state.position.get(sym, 0)
-            limit = self.POSITION_LIMITS[sym]
+        # 3. Market Making Hydrogel Pack
+        orders[self.HYDROGEL] = []
+        hydro_depth = state.order_depths.get(self.HYDROGEL)
+        if hydro_depth and len(hydro_depth.buy_orders) > 0 and len(hydro_depth.sell_orders) > 0:
+            best_bid = max(hydro_depth.buy_orders.keys())
+            best_ask = min(hydro_depth.sell_orders.keys())
             
-            # Empirical Premium Analysis
-            intrinsic = max(0.0, s_mid - K)
-            premium = call_mid - intrinsic
-            ema_p = self.calculate_ema(ema_dict, f'{sym}_p', self.PREMIUM_EMA_WINDOW, premium)
-            fair_v = intrinsic + ema_p
+            spread = best_ask - best_bid
+            mid = (best_bid + best_ask) / 2
             
-            orders = []
+            # -------------------------------------------------------------
+            # SIMPLE MOMENTUM ALIGNED LOGIC WITH MIN PRICE CHECK
+            # Buy when we see the "green dot" (Bot Bought, mid > prev_mid)
+            # Sell when we see the "red dot" (Bot Sold, mid < prev_mid)
+            # -------------------------------------------------------------
+            if spread <= 10 and self.prev_hydro_spread >= 14:
+                cur_pos = state.position.get(self.HYDROGEL, 0)
+                
+                if mid > self.prev_hydro_mid:
+                    # Green Dot Formed (Bot Bought). We Buy using full limit.
+                    buy_qty = self.POS_LIMIT_UNDERLYING - cur_pos
+                    if buy_qty > 0:
+                        orders[self.HYDROGEL].append(Order(self.HYDROGEL, best_ask, buy_qty))
+                        self.min_green_buy_price = min(self.min_green_buy_price, best_ask)
+                        
+                elif mid < self.prev_hydro_mid:
+                    # Red Dot Formed (Bot Sold). We Sell using full limit, checking min green price.
+                    if self.min_green_buy_price == float('inf') or best_bid > self.min_green_buy_price:
+                        sell_qty = -self.POS_LIMIT_UNDERLYING - cur_pos
+                        if sell_qty < 0:
+                            orders[self.HYDROGEL].append(Order(self.HYDROGEL, best_bid, sell_qty))
+
             
-            # SAFE TAKER ONLY: No passive quotes. We only enter if someone else
-            # is offering a price that is mathematically "dumb."
-            
-            # 1. Option is massively overpriced? Hit the Bid.
-            if best_bid > fair_v + self.TAKER_THRESHOLD:
-                vol = min(depth.buy_orders[best_bid], limit + pos)
-                if vol > 0: orders.append(Order(sym, best_bid, -vol))
-            
-            # 2. Option is massively underpriced? Lift the Ask.
-            elif best_ask < fair_v - self.TAKER_THRESHOLD:
-                vol = min(abs(depth.sell_orders[best_ask]), limit - pos)
-                if vol > 0: orders.append(Order(sym, best_ask, vol))
+            # Update state variables
+            self.prev_hydro_spread = spread
+            self.prev_hydro_mid = mid
 
-            if orders:
-                result[sym] = orders
-
-            # Track total delta for the hedge
-            total_delta += pos * self.bs_delta(s_mid, K, TTE, 0.0, self.HEDGE_IV_CONSTANT)
-
-        # ── 3. Smart Hedging (The Safety Net) ─────────────────────────────────
-        target_pos = -round(total_delta)
-        hedge_qty  = target_pos - spot_pos
-        
-        # Only hedge if:
-        # A) The "narrowing bot" is present (s_spread <= 3) to avoid high slippage.
-        # B) OR our delta risk is getting too high (> 15 units).
-        should_hedge = (s_spread <= self.MAX_SPOT_SPREAD) or (abs(hedge_qty) > self.HEDGE_VOL_THRESHOLD)
-
-        if should_hedge:
-            spot_orders = []
-            if hedge_qty > 0:
-                h_vol = min(hedge_qty, spot_limit - spot_pos)
-                if h_vol > 0: spot_orders.append(Order(spot_product, s_ask, h_vol))
-            elif hedge_qty < 0:
-                h_vol = max(hedge_qty, -(spot_limit + spot_pos))
-                if h_vol < 0: spot_orders.append(Order(spot_product, s_bid, h_vol))
-            
-            if spot_orders:
-                result[spot_product] = spot_orders
-
-        # ── Persist ───────────────────────────────────────────────────────────
-        traderData = json.dumps({'ema': ema_dict})
-        return result, conversions, traderData
+        logger.flush(state, orders, conversions, trader_data)
+        return orders, conversions, trader_data

@@ -74,15 +74,19 @@ async function maybeLoadDemo() {
 
 async function loadCsvDataSource() {
   try {
-    const strats = await loadAllCsvDays([0, 1, 2]);
+    const r3 = await loadAllCsvDays(3, [0, 1, 2]);
+    const r4 = await loadAllCsvDays(4, [1, 2, 3]);
+    const strats = [...r3, ...r4];
+    
     if (strats.length === 0) {
       console.warn("No CSV days loaded.");
       return;
     }
     // Register all days as separate strategies
     replaceStrategies(strats);
-    // Auto-select Day 0 as the reference
-    setState({ referenceId: strats[0].id });
+    // Auto-select Round 4 Day 1 if available, else first strategy
+    const r4d1 = strats.find(s => s.round === 4 && s.filename.includes("_day_1.csv"));
+    setState({ referenceId: r4d1 ? r4d1.id : strats[0].id });
   } catch (err) {
     console.warn("CSV data load failed:", err);
   }
@@ -141,6 +145,10 @@ async function main() {
     productSelect: $("product-select"),
     themeBtn: $("theme-toggle"),
     aboutBtn: $("open-about-top"),
+    botFilterToggle: $("bot-filter-toggle"),
+    botFilterWrap: $("bot-filter-wrap"),
+    botSelectBtn: $("bot-select-btn"),
+    botCountLabel: $("bot-count-label"),
     onShowAbout: openAbout,
   });
 
@@ -298,33 +306,60 @@ async function main() {
   const restoreBtn = document.getElementById("restore-layout");
   if (restoreBtn) restoreBtn.addEventListener("click", restoreDefaultLayout);
 
-  // ── Day tab wiring ────────────────────────────────────────────────────────
-  // After CSV load each tab button switches the visible day by setting the
-  // matching strategy as the reference.  The active class tracks the store.
+  // ── Round & Day tab wiring ──────────────────────────────────────────────────
+  const roundTabsEl = $("round-tabs");
   const dayTabsEl = $("day-tabs");
+
+  if (roundTabsEl) {
+    roundTabsEl.addEventListener("click", (e) => {
+      const btn = e.target.closest(".day-tab");
+      if (!btn) return;
+      const round = parseInt(btn.dataset.round, 10);
+      const { strategies, referenceId } = getState();
+      const currentRef = strategies.find(s => s.id === referenceId);
+      const currentDay = currentRef ? currentRef.days[0] : 0;
+
+      // Try to match same day in different round, or just first available day in that round
+      let match = strategies.find(s => s.round === round && s.days[0] === currentDay);
+      if (!match) match = strategies.find(s => s.round === round);
+      if (match) setState({ referenceId: match.id });
+    });
+  }
+
   if (dayTabsEl) {
     dayTabsEl.addEventListener("click", (e) => {
       const btn = e.target.closest(".day-tab");
       if (!btn) return;
       const day = parseInt(btn.dataset.day, 10);
-      const { strategies } = getState();
-      // CSV strategies are named "CSV · Round 3 Day N" — match by day number
+      const { strategies, referenceId } = getState();
+      const currentRef = strategies.find(s => s.id === referenceId);
+      const currentRound = currentRef ? currentRef.round : 3;
+
       const match = strategies.find((s) =>
-        s.filename?.includes(`_day_${day}.csv`)
+        s.round === currentRound && (s.days[0] === day || s.filename?.includes(`_day_${day}.csv`))
       );
       if (match) setState({ referenceId: match.id });
     });
 
-    // Keep tab highlight in sync with the store's referenceId
+    // Keep tabs highlight in sync with the store's referenceId
     subscribe((state) => {
       const ref = state.strategies.find((s) => s.id === state.referenceId);
       if (!ref) return;
+
+      if (roundTabsEl) {
+        roundTabsEl.querySelectorAll(".day-tab").forEach((btn) => {
+          btn.classList.toggle("active", parseInt(btn.dataset.round, 10) === ref.round);
+        });
+      }
+
       dayTabsEl.querySelectorAll(".day-tab").forEach((btn) => {
-        const day = btn.dataset.day;
-        btn.classList.toggle(
-          "active",
-          ref.filename?.includes(`_day_${day}.csv`) ?? false
-        );
+        const day = parseInt(btn.dataset.day, 10);
+        const isMatch = ref.days[0] === day || ref.filename?.includes(`_day_${day}.csv`);
+        btn.classList.toggle("active", isMatch);
+
+        // Hide/show day tabs based on what's available in this round
+        const hasDay = state.strategies.some(s => s.round === ref.round && (s.days[0] === day || s.filename?.includes(`_day_${day}.csv`)));
+        btn.classList.toggle("hidden", !hasDay);
       });
     });
   }
