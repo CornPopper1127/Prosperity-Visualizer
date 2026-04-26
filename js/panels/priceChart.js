@@ -400,7 +400,7 @@ export function mountPriceChart({
     }
 
     return {
-      xFormat: (v) => Math.round(v).toLocaleString(),
+      xFormat: (v) => Math.round(v % 1000000).toLocaleString(),
       yFormat: (v) => v.toFixed(1),
       targetPoints: state.prefs.showSampled ? 1500 : Infinity,
       series: seriesOutput,
