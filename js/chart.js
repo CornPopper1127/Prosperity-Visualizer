@@ -30,7 +30,7 @@ const DRAG_THRESHOLD = 4; // px before a drag is treated as a zoom
 
 export function createChart(canvas, opts = {}) {
   const ctx = canvas.getContext("2d");
-  const { onSeek = null, onHover = null } = opts;
+  const { onSeek = null, onHover = null, onRangeChange = null } = opts;
 
   let model = null;
   let cursorX = null;
@@ -105,6 +105,7 @@ export function createChart(canvas, opts = {}) {
     if (a > b) [a, b] = [b, a];
     if (b - a > (xmax - xmin) * 0.001) {
       xView = [a, b];
+      if (onRangeChange) onRangeChange(xView);
       render();
     } else {
       render();
@@ -127,6 +128,7 @@ export function createChart(canvas, opts = {}) {
     e.preventDefault();
     if (xView !== null) {
       xView = null;
+      if (onRangeChange) onRangeChange(null);
       render();
     }
   });
@@ -223,6 +225,11 @@ export function createChart(canvas, opts = {}) {
   }
 
   function computeBounds() {
+    if (model.yRange) {
+      model._ymin = model.yRange[0];
+      model._ymax = model.yRange[1];
+      return;
+    }
     const visXmin = visibleXMin();
     const visXmax = visibleXMax();
 
@@ -231,21 +238,30 @@ export function createChart(canvas, opts = {}) {
     // raw (un-downsampled) datasets passed in by callers.
     let ymin = Infinity,
       ymax = -Infinity;
-    for (const s of model.series) {
-      const xs = s.xs;
-      const ys = s.ys;
-      const len = Math.min(xs.length, ys.length);
-      if (!len) continue;
-      const [i0, i1] = visibleIndexRange(xs, visXmin, visXmax);
-      const hi = Math.min(i1, len);
-      for (let i = i0; i < hi; i++) {
-        const y = ys[i];
-        if (Number.isFinite(y)) {
-          if (y < ymin) ymin = y;
-          if (y > ymax) ymax = y;
+      
+    const processBounds = (arr) => {
+      if (!arr) return;
+      for (const s of arr) {
+        const xs = s.xs;
+        const ys = s.ys;
+        if (!xs || !ys) continue;
+        const len = Math.min(xs.length, ys.length);
+        if (!len) continue;
+        const [i0, i1] = visibleIndexRange(xs, visXmin, visXmax);
+        const hi = Math.min(i1, len);
+        for (let i = i0; i < hi; i++) {
+          const y = ys[i];
+          if (Number.isFinite(y)) {
+            if (y < ymin) ymin = y;
+            if (y > ymax) ymax = y;
+          }
         }
       }
-    }
+    };
+    
+    processBounds(model.series);
+    processBounds(model.markers);
+    
     if (model.limitLines) {
       for (const l of model.limitLines) {
         if (Number.isFinite(l.value)) {
@@ -330,13 +346,14 @@ export function createChart(canvas, opts = {}) {
     const py = (y) =>
       plot.top + plot.height - ((y - ymin) / (ymax - ymin)) * plot.height;
 
-    // Grid + axes
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = GRID_COLOR;
-    ctx.fillStyle = AXIS_COLOR;
-    ctx.font =
-      "10px JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, monospace";
-    ctx.textBaseline = "middle";
+    if (!opts.noGrid) {
+      // Grid + axes
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = GRID_COLOR;
+      ctx.fillStyle = AXIS_COLOR;
+      ctx.font =
+        "10px JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, monospace";
+      ctx.textBaseline = "middle";
 
     const yStep = niceStep(ymax - ymin, 5);
     const yStart = Math.ceil(ymin / yStep) * yStep;
@@ -365,8 +382,9 @@ export function createChart(canvas, opts = {}) {
 
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    for (let v = xStart; v <= xmax; v += xStep) {
-      ctx.fillText(model.xFormat(v), px(v), plot.top + plot.height + 4);
+      for (let v = xStart; v <= xmax; v += xStep) {
+        ctx.fillText(model.xFormat(v), px(v), plot.top + plot.height + 4);
+      }
     }
 
     // Limit lines
@@ -544,17 +562,6 @@ export function createChart(canvas, opts = {}) {
       ctx.restore();
     }
 
-    // Zoom indicator in the top-left of the plot area
-    if (xView) {
-      ctx.save();
-      ctx.font =
-        "9px JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, monospace";
-      ctx.fillStyle = ZOOM_EDGE;
-      ctx.textAlign = "left";
-      ctx.textBaseline = "top";
-      ctx.fillText("zoom · right-click to reset", plot.left + 4, plot.top + 2);
-      ctx.restore();
-    }
 
     ctx.restore();
 
@@ -587,16 +594,25 @@ export function createChart(canvas, opts = {}) {
     // caller lets the chart do its own viewport-aware downsampling).
     let xmin = Infinity;
     let xmax = -Infinity;
-    for (const s of m.series) {
-      const xs = s.xs;
-      for (let i = 0; i < xs.length; i++) {
-        const x = xs[i];
-        if (Number.isFinite(x)) {
-          if (x < xmin) xmin = x;
-          if (x > xmax) xmax = x;
+    
+    const processXBounds = (arr) => {
+      if (!arr) return;
+      for (const s of arr) {
+        const xs = s.xs;
+        if (!xs) continue;
+        for (let i = 0; i < xs.length; i++) {
+          const x = xs[i];
+          if (Number.isFinite(x)) {
+            if (x < xmin) xmin = x;
+            if (x > xmax) xmax = x;
+          }
         }
       }
-    }
+    };
+    
+    processXBounds(m.series);
+    processXBounds(m.markers);
+    
     if (!Number.isFinite(xmin)) {
       xmin = 0;
       xmax = 1;
@@ -615,11 +631,13 @@ export function createChart(canvas, opts = {}) {
 
   function setXView(min, max) {
     xView = [min, max];
+    if (onRangeChange) onRangeChange(xView);
     render();
   }
 
   function resetXView() {
     xView = null;
+    if (onRangeChange) onRangeChange(null);
     render();
   }
 

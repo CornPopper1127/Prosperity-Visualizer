@@ -41,6 +41,36 @@ function wallMidOf(bids, asks) {
   return (bWall.price + aWall.price) / 2;
 }
 
+function rollingZScore(arr, windowSize = 100) {
+  const n = arr.length;
+  const out = new Float32Array(n).fill(NaN);
+  let sum = 0, sumSq = 0, count = 0;
+  for (let i = 0; i < n; i++) {
+    const val = arr[i];
+    if (Number.isFinite(val)) {
+      sum += val;
+      sumSq += val * val;
+      count++;
+    }
+    if (i >= windowSize) {
+      const oldVal = arr[i - windowSize];
+      if (Number.isFinite(oldVal)) {
+        sum -= oldVal;
+        sumSq -= oldVal * oldVal;
+        count--;
+      }
+    }
+    if (count >= 2) {
+      const mean = sum / count;
+      const variance = sumSq / count - mean * mean;
+      const stdDev = Math.sqrt(Math.max(0, variance));
+      if (stdDev > 0 && Number.isFinite(val)) out[i] = (val - mean) / stdDev;
+      else if (stdDev === 0 && Number.isFinite(val)) out[i] = 0;
+    }
+  }
+  return out;
+}
+
 /**
  * Parse the prices CSV text (semicolon-delimited).
  * Columns: day;timestamp;product;bid_price_1;bid_volume_1;bid_price_2;bid_volume_2;
@@ -202,6 +232,16 @@ function buildCsvStrategy(priceRows, rawTrades, dayNum) {
     s.books[i] = { bids: r.bids, asks: r.asks };
   }
 
+  // Precompute Z-scores for performance
+  for (const p of products) {
+    const s = series[p];
+    s.zAsk = rollingZScore(s.bestAsk);
+    s.zBid = rollingZScore(s.bestBid);
+    s.zMid = rollingZScore(s.midPrice);
+    s.zMicro = rollingZScore(s.microPrice);
+    s.zWallMid = rollingZScore(s.wallMid);
+  }
+
   // Process trades — align to nearest tick
   const tradesSorted = rawTrades
     .filter((t) => Number.isFinite(t.timestamp) && Number.isFinite(t.price))
@@ -272,15 +312,15 @@ function buildCsvStrategy(priceRows, rawTrades, dayNum) {
 }
 
 /**
- * Load CSV data files and return a strategy object.
+ * Load a single day's CSV data files and return a strategy object.
  */
 export async function loadCsvData(day = 0) {
   const [pricesResp, tradesResp] = await Promise.all([
     fetch(`./eda/prices_round_${ROUND}_day_${day}.csv`),
     fetch(`./eda/trades_round_${ROUND}_day_${day}.csv`),
   ]);
-  if (!pricesResp.ok) throw new Error(`Prices CSV: HTTP ${pricesResp.status}`);
-  if (!tradesResp.ok) throw new Error(`Trades CSV: HTTP ${tradesResp.status}`);
+  if (!pricesResp.ok) throw new Error(`Prices CSV day ${day}: HTTP ${pricesResp.status}`);
+  if (!tradesResp.ok) throw new Error(`Trades CSV day ${day}: HTTP ${tradesResp.status}`);
 
   const [pricesText, tradesText] = await Promise.all([
     pricesResp.text(),
@@ -290,4 +330,20 @@ export async function loadCsvData(day = 0) {
   const priceRows = parsePricesCsv(pricesText);
   const tradeRows = parseTradesCsv(tradesText);
   return buildCsvStrategy(priceRows, tradeRows, day);
+}
+
+/**
+ * Load multiple days in parallel.  Returns an array of strategy objects in
+ * the order requested, silently dropping any day that fails to fetch (so a
+ * missing file doesn't break the whole dashboard).
+ */
+export async function loadAllCsvDays(days = [0, 1, 2]) {
+  const results = await Promise.allSettled(days.map((d) => loadCsvData(d)));
+  return results
+    .map((r, i) => {
+      if (r.status === "fulfilled") return r.value;
+      console.warn(`Day ${days[i]} CSV failed:`, r.reason);
+      return null;
+    })
+    .filter(Boolean);
 }

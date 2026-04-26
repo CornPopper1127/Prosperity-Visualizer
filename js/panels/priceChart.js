@@ -29,6 +29,11 @@ export function mountPriceChart({
   buysCheck,
   sellsCheck,
   botsCheck,
+  moCheck,
+  bidAskCheck,
+  sigma1Check,
+  sigma2Check,
+  sigma3Check,
   overlayCheck,
   joinGapsCheck,
   resetZoomBtn,
@@ -36,6 +41,7 @@ export function mountPriceChart({
   modeDotBtn,
 }) {
   let chart = null;
+  let zScoreChart = null;
   let lastKey = null;
   let currentLegend = [];
   let showLine = true;
@@ -62,6 +68,21 @@ export function mountPriceChart({
   botsCheck.addEventListener("change", () =>
     setPrefs({ priceBots: botsCheck.checked })
   );
+  moCheck.addEventListener("change", () =>
+    setPrefs({ priceMo: moCheck.checked })
+  );
+  bidAskCheck.addEventListener("change", () =>
+    setPrefs({ priceBidAsk: bidAskCheck.checked })
+  );
+  sigma1Check.addEventListener("change", () =>
+    setPrefs({ zScoreSigma1: sigma1Check.checked })
+  );
+  sigma2Check.addEventListener("change", () =>
+    setPrefs({ zScoreSigma2: sigma2Check.checked })
+  );
+  sigma3Check.addEventListener("change", () =>
+    setPrefs({ zScoreSigma3: sigma3Check.checked })
+  );
   overlayCheck.addEventListener("change", () =>
     setPrefs({ priceOverlayDays: overlayCheck.checked })
   );
@@ -85,43 +106,65 @@ export function mountPriceChart({
     render();
   });
 
+  let isSyncing = false;
+
   function ensureChart() {
     if (chart) return;
-    chart = createChart(canvasEl, {
-      onSeek: (xValue) => {
-        const state = getState();
-        const ref = getReference(state);
-        if (!ref) return;
-        if (state.prefs.priceOverlayDays) {
-          // x here is a raw timestamp (0..~999900). Jump to the nearest
-          // tick within the currently-viewed day.
-          const curDay = ref.days[state.tickIdx] ?? ref.days[0] ?? 0;
-          let best = -1;
-          let bestDelta = Infinity;
-          for (let i = 0; i < ref.days.length; i++) {
-            if (ref.days[i] !== curDay) continue;
-            const d = Math.abs(ref.rawTimestamps[i] - xValue);
-            if (d < bestDelta) {
-              bestDelta = d;
-              best = i;
-            }
-          }
-          if (best >= 0) setTickIdx(best);
-          return;
+    
+    const onSeek = (xValue) => {
+      const state = getState();
+      const ref = getReference(state);
+      if (!ref) return;
+      const ts = ref.timestamps;
+      if (ts.length < 2) return;
+      let lo = 0; let hi = ts.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        if (ts[mid] < xValue) lo = mid + 1;
+        else hi = mid;
+      }
+      setTickIdx(lo);
+    };
+
+    const onHover = (values, xValue) => {
+      if (isSyncing) return;
+      isSyncing = true;
+      zScoreChart?.setCursorX(xValue);
+      renderLegend(values);
+      isSyncing = false;
+    };
+
+    const onRangeChange = (range) => {
+      if (isSyncing) return;
+      isSyncing = true;
+      if (range) zScoreChart?.setXView(range[0], range[1]);
+      else zScoreChart?.resetXView();
+      isSyncing = false;
+    };
+
+    chart = createChart(canvasEl, { onSeek, onHover, onRangeChange });
+    
+    // Z-Score Chart
+    const zCanvas = canvasEl.closest('.panel-body').querySelector('#chart-zscore');
+    if (zCanvas) {
+      zScoreChart = createChart(zCanvas, {
+        noGrid: true,
+        onSeek,
+        onHover: (_, xValue) => {
+          if (isSyncing) return;
+          isSyncing = true;
+          chart?.setCursorX(xValue);
+          isSyncing = false;
+        },
+        onRangeChange: (range) => {
+          if (isSyncing) return;
+          isSyncing = true;
+          if (range) chart?.setXView(range[0], range[1]);
+          else chart?.resetXView();
+          isSyncing = false;
         }
-        const ts = ref.timestamps;
-        if (ts.length < 2) return;
-        let lo = 0;
-        let hi = ts.length - 1;
-        while (lo < hi) {
-          const mid = (lo + hi) >>> 1;
-          if (ts[mid] < xValue) lo = mid + 1;
-          else hi = mid;
-        }
-        setTickIdx(lo);
-      },
-      onHover: renderLegend,
-    });
+      });
+    }
   }
 
   function renderLegend(values) {
@@ -185,9 +228,30 @@ export function mountPriceChart({
       return out;
     };
 
+    // Helper for Z-score plotting that uses precomputed fields
+    const makeZSeries = (ysField, threshold, baseProps) => {
+      const zs = ps[ysField];
+      if (!zs) return [];
+      
+      const ys = threshold > 0 
+        ? zs.map(v => (Math.abs(v) >= threshold ? v : NaN))
+        : zs;
+
+      if (!overlay) {
+        return [{ ...baseProps, breakOnNaN, xs: segments[0].xs, ys }];
+      }
+      const out = [];
+      for (const seg of segments) {
+        out.push({ ...baseProps, breakOnNaN, xs: seg.xs, ys: ys.slice(seg.start, seg.end) });
+      }
+      return out;
+    };
+
     const series = [];
-    series.push(...makeSeries(ps.bestAsk, { name: "Best ask (L1)", color: "#f87171", width: 1.2 }));
-    series.push(...makeSeries(ps.bestBid, { name: "Best bid (L1)", color: "#34d399", width: 1.2 }));
+    if (state.prefs.priceBidAsk !== false) {
+      series.push(...makeSeries(ps.bestAsk, { name: "Best ask (L1)", color: "#f87171", width: 1.2 }));
+      series.push(...makeSeries(ps.bestBid, { name: "Best bid (L1)", color: "#34d399", width: 1.2 }));
+    }
 
     if (state.prefs.priceLevels !== false) {
       series.push(...makeSeries(ps.askPrices?.[1] ?? [], { name: "Ask L2", color: "#f8717199", width: 1 }));
@@ -202,7 +266,7 @@ export function mountPriceChart({
       series.push(...makeSeries(ps.microPrice, { name: "Microprice", color: "#2dd4bf", width: 1.2, dash: [4, 3] }));
     }
     if (state.prefs.priceWallMid !== false) {
-      series.push(...makeSeries(ps.wallMid ?? [], { name: "Wall mid", color: "#fbbf24", width: 1.2, dash: [2, 4] }));
+      series.push(...makeSeries(ps.wallMid ?? [], { name: "Wall mid", color: "#3b82f6", width: 1.2, dash: [2, 4] }));
     }
 
     // Markers: SUBMISSION buys (^), SUBMISSION sells (v), bot trades (·).
@@ -260,10 +324,35 @@ export function mountPriceChart({
         color: "#d4d4d8",
         outline: "#18181b",
         shape: "dot",
-        size: 11,
+        size: 7,
         xs: botXs,
         ys: botYs,
       });
+
+    if (state.prefs.priceMo && product === "HYDROGEL_PACK") {
+      const moXs = [];
+      const moYs = [];
+      const sp = ps.spread;
+      const mid = ps.midPrice;
+      const ts = ref.timestamps;
+      for (let i = 0; i < sp.length; i++) {
+        if (sp[i] < 10) {
+          moXs.push(ts[i]);
+          moYs.push(mid[i]);
+        }
+      }
+      if (moXs.length > 0) {
+        markers.push({
+          name: "Market Orders (HYDROGEL)",
+          color: "#fde047",
+          outline: "#422006",
+          shape: "diamond",
+          size: 6,
+          xs: moXs,
+          ys: moYs,
+        });
+      }
+    }
 
     // Dedupe legend by series name (overlay mode emits N sub-series per
     // metric that should collapse into one legend row).
@@ -316,6 +405,7 @@ export function mountPriceChart({
       targetPoints: state.prefs.showSampled ? 1500 : Infinity,
       series: seriesOutput,
       markers,
+      makeZSeries,
     };
   }
 
@@ -332,6 +422,11 @@ export function mountPriceChart({
     buysCheck.checked = !!state.prefs.priceBuys;
     sellsCheck.checked = !!state.prefs.priceSells;
     botsCheck.checked = !!state.prefs.priceBots;
+    moCheck.checked = !!state.prefs.priceMo;
+    bidAskCheck.checked = state.prefs.priceBidAsk !== false;
+    sigma1Check.checked = state.prefs.zScoreSigma1 !== false;
+    sigma2Check.checked = state.prefs.zScoreSigma2 !== false;
+    sigma3Check.checked = state.prefs.zScoreSigma3 !== false;
     overlayCheck.checked = !!state.prefs.priceOverlayDays;
     joinGapsCheck.checked = state.prefs.priceJoinGaps !== false;
 
@@ -362,13 +457,99 @@ export function mountPriceChart({
       !!state.prefs.priceBuys,
       !!state.prefs.priceSells,
       !!state.prefs.priceBots,
+      !!state.prefs.priceMo,
+      state.prefs.priceBidAsk !== false,
+      state.prefs.zScoreSigma1 !== false,
+      state.prefs.zScoreSigma2 !== false,
+      state.prefs.zScoreSigma3 !== false,
       !!state.prefs.priceOverlayDays,
       state.prefs.priceJoinGaps !== false,
       showLine,
       showDot,
     ].join("|");
+
     if (key !== lastKey) {
-      chart.setData(computeModel(state, ref, product));
+      const model = computeModel(state, ref, product);
+      chart.setData(model);
+      
+      if (zScoreChart) {
+        const ps = ref.series[product];
+        const zSeries = [];
+        
+        // Determine filtering threshold based on highest enabled sigma
+        let threshold = 0;
+        if (state.prefs.zScoreSigma3 !== false) threshold = 3;
+        else if (state.prefs.zScoreSigma2 !== false) threshold = 2;
+        else if (state.prefs.zScoreSigma1 !== false) threshold = 1;
+
+        const addZ = (field, name, color) => {
+          zSeries.push(...model.makeZSeries(field, threshold, { name, color, width: 1.5 }));
+        };
+
+        if (state.prefs.priceBidAsk !== false) {
+          addZ("zAsk", "Ask Z", "#f87171");
+          addZ("zBid", "Bid Z", "#34d399");
+        }
+        if (state.prefs.priceMid !== false) addZ("zMid", "Mid Z", "#a78bfa");
+        if (state.prefs.priceMicro !== false) addZ("zMicro", "Micro Z", "#2dd4bf");
+        if (state.prefs.priceWallMid !== false) addZ("zWallMid", "Wall Mid Z", "#3b82f6");
+
+        const limits = [];
+        if (state.prefs.zScoreSigma1 !== false) {
+          limits.push({ value: 1, color: "#71717a", dash: [4, 4] });
+          limits.push({ value: -1, color: "#71717a", dash: [4, 4] });
+        }
+        if (state.prefs.zScoreSigma2 !== false) {
+          limits.push({ value: 2, color: "#52525b", dash: [2, 2] });
+          limits.push({ value: -2, color: "#52525b", dash: [2, 2] });
+        }
+        if (state.prefs.zScoreSigma3 !== false) {
+          limits.push({ value: 3, color: "#3f3f46", dash: [1, 1] });
+          limits.push({ value: -3, color: "#3f3f46", dash: [1, 1] });
+        }
+        limits.push({ value: 0, color: "#ffffff33", width: 1 });
+
+        const zMarkers = [];
+        for (const mk of model.markers) {
+          const zxs = [];
+          const zys = [];
+          const psField = mk.name.includes("MO") ? "zMid" : "zMid";
+          const zSource = ps[psField];
+          if (!zSource) continue;
+          
+          for (let i = 0; i < mk.xs.length; i++) {
+            const tx = mk.xs[i];
+            const ts = ref.timestamps;
+            let lo = 0, hi = ts.length - 1;
+            while(lo < hi) {
+              const mid = (lo + hi) >>> 1;
+              if (ts[mid] < tx) lo = mid + 1; else hi = mid;
+            }
+            const z = zSource[lo] ?? NaN;
+            if (Number.isFinite(z) && (threshold === 0 || Math.abs(z) >= threshold)) {
+              zxs.push(tx);
+              zys.push(z);
+            }
+          }
+          if (zxs.length > 0) {
+            zMarkers.push({ ...mk, xs: zxs, ys: zys, size: mk.size * 0.8 });
+          }
+        }
+
+        zScoreChart.setData({
+          xFormat: model.xFormat,
+          yFormat: (v) => v.toFixed(1) + "σ",
+          targetPoints: 2000,
+          yRange: [-4, 4],
+          series: showLine ? zSeries : zSeries.map(s => ({ ...s, color: "transparent", width: 0 })),
+          markers: [
+            ...(showDot ? zSeries.map(s => ({ ...s, shape: "dot", size: 4 })) : []),
+            ...zMarkers
+          ],
+          limitLines: limits,
+        });
+      }
+      
       lastKey = key;
       renderLegend(null);
     }
@@ -376,11 +557,13 @@ export function mountPriceChart({
       ? ref.rawTimestamps[state.tickIdx] ?? 0
       : ref.timestamps[state.tickIdx] ?? 0;
     chart.setCursorX(cursorX);
+    zScoreChart?.setCursorX(cursorX);
   }
 
   subscribe(render);
   render();
 }
+
 
 function escapeHtml(s) {
   return String(s)

@@ -32,6 +32,13 @@
           <input type="file" id="file-input" accept=".log,.json,application/json" multiple hidden />
         </div>
 
+        <div class="day-tabs" id="day-tabs">
+          <span class="day-tabs-label">Day</span>
+          <button class="day-tab active" data-day="0">0</button>
+          <button class="day-tab" data-day="1">1</button>
+          <button class="day-tab" data-day="2">2</button>
+        </div>
+
         <div class="parse-progress hidden" id="parse-progress">
           <div class="parse-progress-row">
             <span id="parse-progress-message">…</span>
@@ -148,21 +155,35 @@
                 <label class="check small"><input type="checkbox" id="price-buys" /> buys</label>
                 <label class="check small"><input type="checkbox" id="price-sells" /> sells</label>
                 <label class="check small"><input type="checkbox" id="price-bots" /> bots</label>
+                <label class="check small" title="Highlight aggressive market orders (HYDROGEL)"><input type="checkbox" id="price-mo" /> MO</label>
+                <label class="check small" title="Show/hide Best Bid & Ask levels"><input type="checkbox" id="price-bidask" checked /> B/A</label>
                 <label class="check small"><input type="checkbox" id="price-overlay" /> overlay days</label>
                 <label class="check small"><input type="checkbox" id="price-join-gaps" checked /> join gaps</label>
                 <div class="speed-group">
                   <button class="speed-btn active" id="price-mode-line">line</button>
                   <button class="speed-btn" id="price-mode-dot">dot</button>
                 </div>
+                <div class="sep"></div>
+                <label class="check small" title="Show +/- 1 Sigma lines"><input type="checkbox" id="price-sigma1" checked /> 1σ</label>
+                <label class="check small" title="Show +/- 2 Sigma lines"><input type="checkbox" id="price-sigma2" checked /> 2σ</label>
+                <label class="check small" title="Show +/- 3 Sigma lines"><input type="checkbox" id="price-sigma3" checked /> 3σ</label>
+                <div class="sep"></div>
                 <button class="btn icon" id="price-reset-zoom" title="Reset zoom">⤾</button>
               </div>
             </header>
             <div class="chart-legend" id="price-legend"></div>
-            <div class="panel-body chart-body">
-              <canvas class="chart" id="chart-price"></canvas>
-              <div class="chart-empty" id="chart-price-empty">Load a log to see prices.</div>
+            <div class="panel-body chart-body duo-chart">
+              <div class="chart-wrapper">
+                <canvas class="chart" id="chart-price"></canvas>
+                <div class="chart-empty" id="chart-price-empty">Load a log to see prices.</div>
+              </div>
+              <div class="chart-wrapper zscore-wrapper">
+                <div class="chart-sub-header">Z-Score (100-tick)</div>
+                <canvas class="chart" id="chart-zscore"></canvas>
+              </div>
             </div>
           </section>
+
 
           <section class="panel panel-book" id="panel-book">
             <header class="panel-header">
@@ -263,6 +284,7 @@
             <header class="panel-header">
               <span id="moneyness-time-title">Moneyness vs Time</span>
               <div class="panel-actions">
+                <label class="check small"><input type="checkbox" id="moneyness-time-clamp" /> max(·,0)</label>
                 <label class="check small"><input type="checkbox" id="moneyness-time-premium" /> subtract premium</label>
                 <div class="speed-group">
                   <button class="speed-btn active" id="moneyness-time-mode-line">line</button>
@@ -295,10 +317,44 @@
               <div class="chart-empty" id="chart-iv-time-empty">Select a VEV option to see IV over time.</div>
             </div>
           </section>
+
+          <section class="panel panel-iv-moneyness" id="panel-iv-moneyness">
+            <header class="panel-header">
+              <span id="iv-moneyness-title">IV vs Moneyness</span>
+              <div class="panel-actions">
+                <label class="check small"><input type="checkbox" id="iv-moneyness-fit" checked /> show fit</label>
+                <label class="check small"><input type="checkbox" id="iv-moneyness-premium" /> subtract premium</label>
+                <div class="speed-group">
+                  <button class="speed-btn active" id="iv-moneyness-mode-dot">dot</button>
+                </div>
+                <button class="btn icon" id="iv-moneyness-reset-zoom" title="Reset zoom">⤾</button>
+              </div>
+            </header>
+            <div class="chart-legend" id="iv-moneyness-legend"></div>
+            <div class="panel-body chart-body">
+              <canvas class="chart" id="chart-iv-moneyness"></canvas>
+              <div class="chart-empty" id="chart-iv-moneyness-empty">Loading CSV data…</div>
+            </div>
+          </section>
+          <section class="panel panel-iv-moneyness-log" id="panel-iv-moneyness-log">
+            <header class="panel-header">
+              <span id="iv-moneyness-log-title">IV vs Moneyness (Log-Normal)</span>
+              <div class="panel-actions">
+                <label class="check small"><input type="checkbox" id="iv-moneyness-log-premium" /> subtract premium</label>
+                <label class="check small"><input type="checkbox" id="iv-moneyness-log-fit" checked /> best fit</label>
+                <button class="btn icon" id="iv-moneyness-log-reset-zoom" title="Reset zoom">⤾</button>
+              </div>
+            </header>
+            <div class="chart-legend" id="iv-moneyness-log-legend"></div>
+            <div class="panel-body chart-body">
+              <canvas class="chart" id="chart-iv-moneyness-log"></canvas>
+              <div class="chart-empty" id="chart-iv-moneyness-log-empty">Loading CSV data…</div>
+            </div>
+          </section>
         </div>
       </main>
     </div>
     <div id="modal-root"></div>
-    <script type="module" src="./app.js?v=11"></script>
+    <script type="module" src="./app.js?v=43"></script>
   </body>
 </html>

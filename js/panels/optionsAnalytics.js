@@ -44,22 +44,34 @@ function bsCallPrice(S, K, T, r, sigma) {
   return S * normCdf(d1) - K * Math.exp(-r * T) * normCdf(d2);
 }
 
+function bsVega(S, K, T, r, sigma) {
+  if (T <= 0 || sigma <= 0) return 0;
+  const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
+  return S * Math.sqrt(T) * (Math.exp(-0.5 * d1 * d1) / Math.sqrt(2 * Math.PI));
+}
+
 function impliedVol(marketPrice, S, K, T, r) {
   if (T <= 0 || marketPrice <= 0) return NaN;
   const intrinsic = Math.max(0, S - K);
-  if (marketPrice < intrinsic - 0.01) return NaN;
-  let sigma = 0.5;
+  if (marketPrice <= intrinsic) return 0;
+  
+  let low = 1e-4;
+  let high = 10.0;
+  
+  // If the max allowed volatility still can't reach the market price, it's out of bounds
+  if (bsCallPrice(S, K, T, r, high) < marketPrice) return NaN;
+  
+  // 100 iterations of Bisection guarantees extreme precision without Newton-Raphson's instability
   for (let i = 0; i < 100; i++) {
-    const price = bsCallPrice(S, K, T, r, sigma);
-    const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
-    const vega = S * Math.sqrt(T) * Math.exp(-d1 * d1 / 2) / Math.sqrt(2 * Math.PI);
-    if (vega < 1e-12) break;
-    const diff = price - marketPrice;
-    sigma -= diff / vega;
-    if (sigma <= 0) sigma = 0.001;
-    if (Math.abs(diff) < 1e-8) return sigma;
+    const mid = (low + high) / 2;
+    const price = bsCallPrice(S, K, T, r, mid);
+    if (price < marketPrice) {
+      low = mid;
+    } else {
+      high = mid;
+    }
   }
-  return sigma > 0 && sigma < 10 ? sigma : NaN;
+  return (low + high) / 2;
 }
 
 /**
@@ -244,15 +256,16 @@ export function mountVolSmileChart({
     const state = getState();
     const ref = getReference(state);
     const dayNum = ref?.days?.[state.tickIdx] ?? 0;
-    const tte = TTE_BASE_DAYS - dayNum;
-    const T = tte / 365;
+    const ts = ref?.rawTimestamps?.[state.tickIdx] ?? 0;
+    const tte = TTE_BASE_DAYS - dayNum - (ts / 1000000);
+    const T = tte / 365; // Annualized perspective (365 days)
 
     titleEl.textContent = "Implied Volatility Smile · VEV Options";
     paramsEl.innerHTML = `<span class="param-pill">r: ${(bsParams.riskFreeRate * 100).toFixed(1)}%</span>
       <span class="param-pill">q: ${(bsParams.dividendYield * 100).toFixed(1)}%</span>
       <span class="param-pill">Type: ${bsParams.optionType}</span>
       <span class="param-pill">Day: ${dayNum}</span>
-      <span class="param-pill">TTE: ${tte}d (${T.toFixed(4)}y)</span>`;
+      <span class="param-pill">TTE: ${tte.toFixed(3)}d (${T.toFixed(4)}y)</span>`;
 
     if (!ref) {
       emptyEl.textContent = "Load data to see IV smile.";
@@ -324,7 +337,7 @@ function strikeFromProduct(product) {
 }
 
 /** Pre-compute full time-series of moneyness for a given product & toggle. */
-function buildMoneynessTimeSeries(ref, strike, subtractPremium) {
+function buildMoneynessTimeSeries(ref, strike, subtractPremium, clamp = false) {
   const spotSeries = ref.series[SPOT_PRODUCT];
   const optSeries = ref.series[`VEV_${strike}`];
   const xs = ref.timestamps;
@@ -337,7 +350,7 @@ function buildMoneynessTimeSeries(ref, strike, subtractPremium) {
       const prem = optSeries?.midPrice[i];
       if (Number.isFinite(prem)) m -= prem;
     }
-    ys[i] = m;
+    ys[i] = clamp ? Math.max(m, 0) : m;
   }
   return { xs, ys };
 }
@@ -352,8 +365,9 @@ function buildIVTimeSeries(ref, strike) {
     const spot = spotSeries?.midPrice[i];
     const prem = optSeries?.midPrice[i];
     const day = ref.days[i] ?? 0;
-    const tte = TTE_BASE_DAYS - day;
-    const T = tte / 365;
+    const ts = ref.rawTimestamps[i] ?? 0;
+    const tte = TTE_BASE_DAYS - day - (ts / 1000000);
+    const T = tte / 365; // Annualized perspective (365 days)
     if (!Number.isFinite(spot) || !Number.isFinite(prem) || prem <= 0 || T <= 0) {
       ys[i] = NaN; continue;
     }
@@ -362,15 +376,45 @@ function buildIVTimeSeries(ref, strike) {
   return { xs, ys };
 }
 
+function polyFit2(xs, ys) {
+  let s_x=0, s_x2=0, s_x3=0, s_x4=0, s_y=0, s_xy=0, s_x2y=0;
+  const n = xs.length;
+  if (n < 3) return null;
+  for (let i = 0; i < n; i++) {
+    const x = xs[i], y = ys[i];
+    const x2 = x*x;
+    s_x += x; s_x2 += x2; s_x3 += x2*x; s_x4 += x2*x2;
+    s_y += y; s_xy += x*y; s_x2y += x2*y;
+  }
+  const m = [
+    [n, s_x, s_x2],
+    [s_x, s_x2, s_x3],
+    [s_x2, s_x3, s_x4]
+  ];
+  const v = [s_y, s_xy, s_x2y];
+  
+  const det = m[0][0]*(m[1][1]*m[2][2] - m[1][2]*m[2][1])
+            - m[0][1]*(m[1][0]*m[2][2] - m[1][2]*m[2][0])
+            + m[0][2]*(m[1][0]*m[2][1] - m[1][1]*m[2][0]);
+  if (Math.abs(det) < 1e-12) return null;
+
+  const c = ((m[1][1]*m[2][2] - m[1][2]*m[2][1])*v[0] + (m[0][2]*m[2][1] - m[0][1]*m[2][2])*v[1] + (m[0][1]*m[1][2] - m[0][2]*m[1][1])*v[2])/det;
+  const b = ((m[1][2]*m[2][0] - m[1][0]*m[2][2])*v[0] + (m[0][0]*m[2][2] - m[0][2]*m[2][0])*v[1] + (m[0][2]*m[1][0] - m[0][0]*m[1][2])*v[2])/det;
+  const a = ((m[1][0]*m[2][1] - m[1][1]*m[2][0])*v[0] + (m[0][1]*m[2][0] - m[0][0]*m[2][1])*v[1] + (m[0][0]*m[1][1] - m[0][1]*m[1][0])*v[2])/det;
+  
+  return { a, b, c }; // y = a*x^2 + b*x + c
+}
+
 /* ─── Moneyness vs Time Panel ─── */
 
 export function mountMoneynessTimeChart({
   canvasEl, emptyEl, titleEl, legendEl,
-  premiumToggle, resetZoomBtn, modeLineBtn, modeDotBtn,
+  premiumToggle, clampToggle, resetZoomBtn, modeLineBtn, modeDotBtn,
 }) {
   let chart = null;
   let lastKey = null;
   let subtractPremium = false;
+  let clamp = false;
   let showLine = true;
   let showDot = false;
 
@@ -379,6 +423,13 @@ export function mountMoneynessTimeChart({
     lastKey = null;
     render();
   });
+  if (clampToggle) {
+    clampToggle.addEventListener("change", () => {
+      clamp = clampToggle.checked;
+      lastKey = null;
+      render();
+    });
+  }
   resetZoomBtn.addEventListener("click", () => chart?.resetXView());
 
   modeLineBtn.classList.toggle("active", showLine);
@@ -430,10 +481,12 @@ export function mountMoneynessTimeChart({
     canvasEl.classList.remove("hidden");
     ensureChart();
 
-    const key = `${ref.id}|${product}|${subtractPremium}|${showLine}|${showDot}`;
+    const key = `${ref.id}|${product}|${subtractPremium}|${clamp}|${showLine}|${showDot}`;
     if (key !== lastKey) {
-      const { xs, ys } = buildMoneynessTimeSeries(ref, strike, subtractPremium);
-      const seriesName = subtractPremium ? "Moneyness − Premium" : "Moneyness (Spot − Strike)";
+      const { xs, ys } = buildMoneynessTimeSeries(ref, strike, subtractPremium, clamp);
+      const seriesName = clamp
+        ? (subtractPremium ? "max(Moneyness − Premium, 0)" : "max(Spot − Strike, 0)")
+        : (subtractPremium ? "Moneyness − Premium" : "Moneyness (Spot − Strike)");
       chart.setData({
         xFormat: (v) => Math.round(v).toLocaleString(),
         yFormat: (v) => v.toFixed(1),
@@ -551,3 +604,317 @@ export function mountIVTimeChart({
   subscribe(render);
   render();
 }
+
+/* ─── IV vs Moneyness Scatter Panel ─── */
+
+export function mountIVMoneynessScatterChart({
+  canvasEl, emptyEl, titleEl, legendEl,
+  premiumToggle, fitToggle, resetZoomBtn,
+}) {
+  let chart = null;
+  let lastKey = null;
+  let subtractPremium = false;
+  let showFit = true;
+
+  premiumToggle.addEventListener("change", () => {
+    subtractPremium = premiumToggle.checked;
+    lastKey = null;
+    render();
+  });
+  if (fitToggle) {
+    showFit = fitToggle.checked;
+    fitToggle.addEventListener("change", () => {
+      showFit = fitToggle.checked;
+      lastKey = null;
+      render();
+    });
+  }
+  resetZoomBtn.addEventListener("click", () => chart?.resetXView());
+
+  function ensureChart() {
+    if (chart) return;
+    chart = createChart(canvasEl, {
+      onHover: (values) => {
+        if (!values) { legendEl.innerHTML = ""; return; }
+        const items = values.map((v) => {
+          if (v == null) return "";
+          return `<span class="legend-row"><span class="legend-swatch" style="background:#10b981"></span><span class="legend-name">IV</span><span class="legend-value">${(v * 100).toFixed(2)}%</span></span>`;
+        }).filter(Boolean);
+        legendEl.innerHTML = items.join("");
+      },
+    });
+  }
+
+  function render() {
+    const state = getState();
+    const ref = getReference(state);
+
+    if (!ref) {
+      emptyEl.textContent = "Load data first.";
+      emptyEl.classList.remove("hidden");
+      canvasEl.classList.add("hidden");
+      return;
+    }
+
+    titleEl.textContent = `IV vs Moneyness (All Options)`;
+    emptyEl.classList.add("hidden");
+    canvasEl.classList.remove("hidden");
+    ensureChart();
+
+    const key = `${ref.id}|${subtractPremium}|${showFit}`;
+    if (key !== lastKey) {
+      const markers = [];
+      const spotSeries = ref.series[SPOT_PRODUCT];
+      const colors = ['#f59e0b', '#3b82f6', '#10b981', '#ec4899', '#8b5cf6', '#ef4444', '#14b8a6', '#f97316', '#6366f1', '#d946ef'];
+      
+      const allFitXs = [];
+      const allFitYs = [];
+
+      for (let sIdx = 0; sIdx < VEV_STRIKES.length; sIdx++) {
+        const strike = VEV_STRIKES[sIdx];
+        const optSeries = ref.series[`VEV_${strike}`];
+        if (!optSeries) continue;
+
+        const xs = [];
+        const ys = [];
+
+        for (let i = 0; i < ref.timestamps.length; i++) {
+          const spot = spotSeries?.midPrice[i];
+          const prem = optSeries?.midPrice[i];
+          const day = ref.days[i] ?? 0;
+          const ts = ref.rawTimestamps[i] ?? 0;
+          const tte = TTE_BASE_DAYS - day - (ts / 1000000);
+          const T = tte / 365;
+
+          if (!Number.isFinite(spot) || !Number.isFinite(prem) || prem <= 0 || T <= 0) {
+            continue;
+          }
+
+          let moneyness = (spot - strike) / spot;
+          if (subtractPremium) moneyness -= (prem / spot);
+
+          const iv = impliedVol(prem, spot, strike, T, bsParams.riskFreeRate);
+          if (Number.isFinite(iv)) {
+            xs.push(moneyness);
+            ys.push(iv);
+            if (iv >= 0.05) { // ignore noise near 0% for high ITM options
+              allFitXs.push(moneyness);
+              allFitYs.push(iv);
+            }
+          }
+        }
+
+        markers.push({
+          name: `VEV_${strike}`,
+          color: colors[sIdx % colors.length],
+          shape: "dot",
+          size: 3,
+          xs, ys,
+        });
+      }
+
+      const series = [];
+      if (showFit && allFitXs.length >= 3) {
+        const coeffs = polyFit2(allFitXs, allFitYs);
+        if (coeffs) {
+          const minX = Math.min(...allFitXs);
+          const maxX = Math.max(...allFitXs);
+          const fitXs = [];
+          const fitYs = [];
+          for (let i = 0; i <= 100; i++) {
+            const x = minX + (maxX - minX) * (i / 100);
+            const y = coeffs.a * x * x + coeffs.b * x + coeffs.c;
+            fitXs.push(x);
+            fitYs.push(y);
+          }
+          series.push({
+            name: "Best Fit (Quad)",
+            color: "#ffffff",
+            width: 3,
+            xs: fitXs,
+            ys: fitYs
+          });
+        }
+      }
+
+      chart.setData({
+        xFormat: (v) => (v * 100).toFixed(2) + "%",
+        yFormat: (v) => (v * 100).toFixed(1) + "%",
+        targetPoints: Infinity,
+        series: series,
+        markers: markers,
+        limitLines: [
+          { value: 0, color: "#71717a", dash: [4, 4] },
+        ],
+      });
+      lastKey = key;
+    }
+  }
+
+  subscribe(render);
+  render();
+}
+
+/* ─── IV vs Moneyness (Log-Normal) Panel ─── */
+
+export function mountIVMoneynessLogChart({
+  canvasEl, emptyEl, titleEl, legendEl,
+  premiumToggle, fitToggle, resetZoomBtn,
+}) {
+  let chart = null;
+  let lastKey = null;
+  let subtractPremium = false;
+  let showFit = true;
+
+  premiumToggle.addEventListener("change", () => {
+    subtractPremium = premiumToggle.checked;
+    lastKey = null;
+    render();
+  });
+  if (fitToggle) {
+    showFit = fitToggle.checked;
+    fitToggle.addEventListener("change", () => {
+      showFit = fitToggle.checked;
+      lastKey = null;
+      render();
+    });
+  }
+  resetZoomBtn.addEventListener("click", () => chart?.resetXView());
+
+  function ensureChart() {
+    if (chart) return;
+    chart = createChart(canvasEl, {
+      onHover: (values) => {
+        if (!values) { legendEl.innerHTML = ""; return; }
+        const items = values.map((v) => {
+          if (v == null) return "";
+          return `<span class="legend-row"><span class="legend-swatch" style="background:#10b981"></span><span class="legend-name">IV</span><span class="legend-value">${(v * 100).toFixed(2)}%</span></span>`;
+        }).filter(Boolean);
+        legendEl.innerHTML = items.join("");
+      },
+    });
+  }
+
+  function render() {
+    const state = getState();
+    const ref = getReference(state);
+
+    if (!ref) {
+      emptyEl.textContent = "Load data first.";
+      emptyEl.classList.remove("hidden");
+      canvasEl.classList.add("hidden");
+      return;
+    }
+
+    titleEl.textContent = `IV vs Moneyness (Log-Normal)`;
+    emptyEl.classList.add("hidden");
+    canvasEl.classList.remove("hidden");
+    ensureChart();
+
+    const key = `${ref.id}|${subtractPremium}|${showFit}`;
+    if (key !== lastKey) {
+      const markers = [];
+      const spotSeries = ref.series[SPOT_PRODUCT];
+      const colors = ['#f59e0b', '#3b82f6', '#10b981', '#ec4899', '#8b5cf6', '#ef4444', '#14b8a6', '#f97316', '#6366f1', '#d946ef'];
+      
+      const allFitXs = [];
+      const allFitYs = [];
+
+      for (let sIdx = 0; sIdx < VEV_STRIKES.length; sIdx++) {
+        const strike = VEV_STRIKES[sIdx];
+        const optSeries = ref.series[`VEV_${strike}`];
+        if (!optSeries) continue;
+
+        const xs = [];
+        const ys = [];
+
+        for (let i = 0; i < ref.timestamps.length; i++) {
+          const spot = spotSeries?.midPrice[i];
+          const prem = optSeries?.midPrice[i];
+          const day = ref.days[i] ?? 0;
+          const ts = ref.rawTimestamps[i] ?? 0;
+          const tte = TTE_BASE_DAYS - day - (ts / 1000000);
+          const T = tte / 365;
+
+          if (!Number.isFinite(spot) || !Number.isFinite(prem) || prem <= 0 || T <= 0) {
+            continue;
+          }
+
+          // Formula from image: m_t = log(K / S_t) / sqrt(TTE)
+          let moneyness = Math.log(strike / spot) / Math.sqrt(T);
+          
+          // If subtracting premium, we adjust the effective spot or strike? 
+          // Usually we adjust the moneyness directly. 
+          // Previous logic was (spot - strike) / spot. 
+          // If we want to keep it consistent, we stick to the provided formula.
+          // Note: subtractPremium logic for this specific log-normal formula is less standard, 
+          // but we'll apply a similar linear adjustment if requested.
+          if (subtractPremium) {
+             // Linear adjustment: m_adj = m - (prem / spot) / sqrt(T)
+             // or similar? Let's just apply the same logic: subtract from the final value.
+             moneyness -= (prem / spot) / Math.sqrt(T);
+          }
+
+          const iv = impliedVol(prem, spot, strike, T, bsParams.riskFreeRate);
+          if (Number.isFinite(iv)) {
+            xs.push(moneyness);
+            ys.push(iv);
+            if (iv >= 0.05) { 
+              allFitXs.push(moneyness);
+              allFitYs.push(iv);
+            }
+          }
+        }
+
+        markers.push({
+          name: `VEV_${strike}`,
+          color: colors[sIdx % colors.length],
+          shape: "dot",
+          size: 3,
+          xs, ys,
+        });
+      }
+
+      const series = [];
+      if (showFit && allFitXs.length >= 3) {
+        const coeffs = polyFit2(allFitXs, allFitYs);
+        if (coeffs) {
+          const minX = Math.min(...allFitXs);
+          const maxX = Math.max(...allFitXs);
+          const fitXs = [];
+          const fitYs = [];
+          for (let i = 0; i <= 100; i++) {
+            const x = minX + (maxX - minX) * (i / 100);
+            const y = coeffs.a * x * x + coeffs.b * x + coeffs.c;
+            fitXs.push(x);
+            fitYs.push(y);
+          }
+          series.push({
+            name: "Best Fit (Quad)",
+            color: "#ffffff",
+            width: 3,
+            xs: fitXs,
+            ys: fitYs
+          });
+        }
+      }
+
+      chart.setData({
+        xFormat: (v) => v.toFixed(3),
+        yFormat: (v) => (v * 100).toFixed(1) + "%",
+        targetPoints: Infinity,
+        series: series,
+        markers: markers,
+        limitLines: [
+          { value: 0, color: "#71717a", dash: [4, 4] },
+        ],
+      });
+      lastKey = key;
+    }
+  }
+
+  subscribe(render);
+  render();
+}
+
+

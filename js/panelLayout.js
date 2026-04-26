@@ -12,7 +12,7 @@
  *  - "Restore default" re-sorts DOM to original order and clears inline styles.
  */
 
-const LAYOUT_KEY = "op:panel-layout:v2";
+const LAYOUT_KEY = "op:panel-layout:v7";
 const ROW_H = 42; // matches grid-auto-rows in CSS
 const MIN_SPAN = 1;
 const MAX_COL_SPAN = 12;

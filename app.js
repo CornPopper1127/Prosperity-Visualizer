@@ -16,14 +16,15 @@ import { mountOrderBook } from "./js/panels/orderBook.js";
 import { mountPressure } from "./js/panels/pressure.js";
 import { mountOwnFills } from "./js/panels/ownFills.js";
 import { mountLogs } from "./js/panels/logs.js";
-import { mountMoneynessChart, mountVolSmileChart, mountMoneynessTimeChart, mountIVTimeChart } from "./js/panels/optionsAnalytics.js";
+
+import { mountMoneynessChart, mountVolSmileChart, mountMoneynessTimeChart, mountIVTimeChart, mountIVMoneynessScatterChart, mountIVMoneynessLogChart } from "./js/panels/optionsAnalytics.js";
 import { showAboutModal } from "./js/panels/about.js";
 import { loadStrategies } from "./js/persistence.js";
 import { loadDemoLog } from "./js/demoLog.js";
 import { parseLogText } from "./js/parserClient.js";
 import { pickColor } from "./js/colors.js";
 import { uid } from "./js/uid.js";
-import { loadCsvData } from "./js/csvLoader.js";
+import { loadCsvData, loadAllCsvDays } from "./js/csvLoader.js";
 import { initLayout, restoreDefaultLayout } from "./js/panelLayout.js";
 
 const DEMO_LOADED_KEY = "openprosperity:demo-loaded:v1";
@@ -73,9 +74,15 @@ async function maybeLoadDemo() {
 
 async function loadCsvDataSource() {
   try {
-    const strat = await loadCsvData(0);
-    // Replace any existing strategies (e.g. persisted demo) with CSV data
-    replaceStrategies([strat]);
+    const strats = await loadAllCsvDays([0, 1, 2]);
+    if (strats.length === 0) {
+      console.warn("No CSV days loaded.");
+      return;
+    }
+    // Register all days as separate strategies
+    replaceStrategies(strats);
+    // Auto-select Day 0 as the reference
+    setState({ referenceId: strats[0].id });
   } catch (err) {
     console.warn("CSV data load failed:", err);
   }
@@ -170,6 +177,11 @@ async function main() {
     buysCheck: $("price-buys"),
     sellsCheck: $("price-sells"),
     botsCheck: $("price-bots"),
+    moCheck: $("price-mo"),
+    bidAskCheck: $("price-bidask"),
+    sigma1Check: $("price-sigma1"),
+    sigma2Check: $("price-sigma2"),
+    sigma3Check: $("price-sigma3"),
     overlayCheck: $("price-overlay"),
     joinGapsCheck: $("price-join-gaps"),
     resetZoomBtn: $("price-reset-zoom"),
@@ -242,6 +254,7 @@ async function main() {
     titleEl: $("moneyness-time-title"),
     legendEl: $("moneyness-time-legend"),
     premiumToggle: $("moneyness-time-premium"),
+    clampToggle: $("moneyness-time-clamp"),
     resetZoomBtn: $("moneyness-time-reset-zoom"),
     modeLineBtn: $("moneyness-time-mode-line"),
     modeDotBtn: $("moneyness-time-mode-dot"),
@@ -257,12 +270,64 @@ async function main() {
     modeDotBtn: $("iv-time-mode-dot"),
   });
 
+
+  mountIVMoneynessScatterChart({
+    canvasEl: $("chart-iv-moneyness"),
+    emptyEl: $("chart-iv-moneyness-empty"),
+    titleEl: $("iv-moneyness-title"),
+    legendEl: $("iv-moneyness-legend"),
+    premiumToggle: $("iv-moneyness-premium"),
+    fitToggle: $("iv-moneyness-fit"),
+    resetZoomBtn: $("iv-moneyness-reset-zoom"),
+  });
+
+  mountIVMoneynessLogChart({
+    canvasEl: $("chart-iv-moneyness-log"),
+    emptyEl: $("chart-iv-moneyness-log-empty"),
+    titleEl: $("iv-moneyness-log-title"),
+    legendEl: $("iv-moneyness-log-legend"),
+    premiumToggle: $("iv-moneyness-log-premium"),
+    fitToggle: $("iv-moneyness-log-fit"),
+    resetZoomBtn: $("iv-moneyness-log-reset-zoom"),
+  });
+
   initPanelCollapse();
   initLayout();
 
   // Wire up the restore-layout button
   const restoreBtn = document.getElementById("restore-layout");
   if (restoreBtn) restoreBtn.addEventListener("click", restoreDefaultLayout);
+
+  // ── Day tab wiring ────────────────────────────────────────────────────────
+  // After CSV load each tab button switches the visible day by setting the
+  // matching strategy as the reference.  The active class tracks the store.
+  const dayTabsEl = $("day-tabs");
+  if (dayTabsEl) {
+    dayTabsEl.addEventListener("click", (e) => {
+      const btn = e.target.closest(".day-tab");
+      if (!btn) return;
+      const day = parseInt(btn.dataset.day, 10);
+      const { strategies } = getState();
+      // CSV strategies are named "CSV · Round 3 Day N" — match by day number
+      const match = strategies.find((s) =>
+        s.filename?.includes(`_day_${day}.csv`)
+      );
+      if (match) setState({ referenceId: match.id });
+    });
+
+    // Keep tab highlight in sync with the store's referenceId
+    subscribe((state) => {
+      const ref = state.strategies.find((s) => s.id === state.referenceId);
+      if (!ref) return;
+      dayTabsEl.querySelectorAll(".day-tab").forEach((btn) => {
+        const day = btn.dataset.day;
+        btn.classList.toggle(
+          "active",
+          ref.filename?.includes(`_day_${day}.csv`) ?? false
+        );
+      });
+    });
+  }
 
   await hydrate();
   await loadCsvDataSource();

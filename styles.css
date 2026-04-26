@@ -204,6 +204,46 @@ a {
   color: var(--c-text-mute);
 }
 
+/* ── Day tab bar ── */
+.day-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px 10px;
+}
+.day-tabs-label {
+  font-size: 11px;
+  color: var(--c-text-dim);
+  margin-right: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.day-tab {
+  flex: 1;
+  padding: 4px 0;
+  border: 1px solid var(--c-border-strong);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--c-text-dim);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.day-tab:hover {
+  border-color: var(--c-accent);
+  color: var(--c-text);
+}
+.day-tab.active {
+  background: var(--c-accent);
+  border-color: var(--c-accent);
+  color: #fff;
+}
+.day-tab.loading {
+  opacity: 0.5;
+  cursor: wait;
+}
+
 .parse-progress {
   margin: 0 12px 12px;
   padding: 8px;
@@ -640,7 +680,7 @@ a {
 }
 .panel-price {
   grid-column: span 8;
-  grid-row: span 7;
+  grid-row: span 16;
 }
 .panel-book {
   grid-column: span 2;
@@ -1252,11 +1292,48 @@ table.data .empty {
   grid-column: span 6;
   grid-row: span 8;
 }
+.panel-iv-moneyness {
+  grid-column: span 12;
+  grid-row: span 12;
+}
+.panel-iv-moneyness-log {
+  grid-column: span 12;
+  grid-row: span 12;
+}
+.panel-zscore {
+  grid-column: span 12;
+  grid-row: span 8;
+}
 .panel-moneyness .chart-body,
 .panel-volsmile .chart-body,
 .panel-moneyness-time .chart-body,
-.panel-iv-time .chart-body {
+.panel-iv-time .chart-body,
+.panel-iv-moneyness .chart-body,
+.panel-iv-moneyness-log .chart-body,
+.panel-zscore .chart-body {
   min-height: 250px;
+}
+.duo-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.chart-wrapper {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.zscore-wrapper {
+  padding-top: 0;
+  flex: 0 0 90px;
+  min-height: 0;
+}
+.chart-sub-header {
+  display: none;
+}
+.panel-iv-moneyness .chart-body,
+.panel-iv-moneyness-log .chart-body {
+  min-height: 400px;
 }
 
 @media (max-width: 1200px) {
