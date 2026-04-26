@@ -569,7 +569,20 @@ export function createChart(canvas, opts = {}) {
       const values = model.series.map((s) =>
         chosen === null ? null : sampleSeries(s, chosen)
       );
-      if (onHover) onHover(values, chosen);
+      
+      const markerValues = [];
+      if (chosen !== null) {
+        for (const m of model.markers || []) {
+          if (!m.xs) continue;
+          for (let i = 0; i < m.xs.length; i++) {
+            if (m.xs[i] === chosen) {
+              markerValues.push({ name: m.name, color: m.color, value: m.ys[i] });
+            }
+          }
+        }
+      }
+
+      if (onHover) onHover(values, chosen, markerValues);
       if (model.onRender) model.onRender(values, chosen);
     }
   }

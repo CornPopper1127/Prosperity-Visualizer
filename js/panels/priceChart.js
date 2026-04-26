@@ -126,11 +126,11 @@ export function mountPriceChart({
       setTickIdx(lo);
     };
 
-    const onHover = (values, xValue) => {
+    const onHover = (values, xValue, markerValues) => {
       if (isSyncing) return;
       isSyncing = true;
       zScoreChart?.setCursorX(xValue);
-      renderLegend(values);
+      renderLegend(values, markerValues);
       isSyncing = false;
     };
 
@@ -167,37 +167,46 @@ export function mountPriceChart({
     }
   }
 
-  function renderLegend(values) {
+  function renderLegend(values, markerValues) {
     if (!currentLegend.length) {
       legendEl.innerHTML = "";
       return;
     }
-    legendEl.innerHTML = currentLegend
-      .map((s) => {
-        let v = null;
-        if (values && s.seriesIdx) {
-          for (const idx of s.seriesIdx) {
-            const candidate = values[idx];
-            if (candidate != null && Number.isFinite(candidate)) {
-              v = candidate;
-              break;
-            }
+    
+    const rows = currentLegend.map((s) => {
+      let v = null;
+      if (values && s.seriesIdx) {
+        for (const idx of s.seriesIdx) {
+          const candidate = values[idx];
+          if (candidate != null && Number.isFinite(candidate)) {
+            v = candidate;
+            break;
           }
         }
-        const swatch = s.marker
-          ? `<span class="legend-swatch marker-${s.marker}" style="background:${s.color};color:${s.color}"></span>`
-          : s.dash
-            ? `<span class="legend-swatch dash" style="color:${s.color}"></span>`
-            : `<span class="legend-swatch" style="background:${s.color}"></span>`;
-        const val =
-          v == null
-            ? s.marker
-              ? ""
-              : `<span class="legend-value muted">—</span>`
-            : `<span class="legend-value">${v.toFixed(1)}</span>`;
-        return `<span class="legend-row">${swatch}<span class="legend-name">${escapeHtml(s.name)}</span>${val}</span>`;
-      })
-      .join("");
+      }
+      const swatch = s.marker
+        ? `<span class="legend-swatch marker-${s.marker}" style="background:${s.color};color:${s.color}"></span>`
+        : s.dash
+          ? `<span class="legend-swatch dash" style="color:${s.color}"></span>`
+          : `<span class="legend-swatch" style="background:${s.color}"></span>`;
+      const val =
+        v == null
+          ? s.marker
+            ? ""
+            : `<span class="legend-value muted">—</span>`
+          : `<span class="legend-value">${v.toFixed(1)}</span>`;
+      return `<span class="legend-row">${swatch}<span class="legend-name">${escapeHtml(s.name)}</span>${val}</span>`;
+    });
+
+    if (markerValues) {
+      for (const m of markerValues) {
+        const swatch = `<span class="legend-swatch marker-diamond" style="background:${m.color};color:${m.color}"></span>`;
+        const val = `<span class="legend-value">${m.value.toFixed(1)}</span>`;
+        rows.push(`<span class="legend-row">${swatch}<span class="legend-name">${escapeHtml(m.name)}</span>${val}</span>`);
+      }
+    }
+
+    legendEl.innerHTML = rows.join("");
   }
 
   function computeModel(state, ref, product) {
@@ -330,26 +339,50 @@ export function mountPriceChart({
       });
 
     if (state.prefs.priceMo && product === "HYDROGEL_PACK") {
-      const moXs = [];
-      const moYs = [];
+      const buyXs = [], buyYs = [];
+      const sellXs = [], sellYs = [];
       const sp = ps.spread;
       const mid = ps.midPrice;
       const ts = ref.timestamps;
-      for (let i = 0; i < sp.length; i++) {
+      const asks = ps.bestAsk;
+      const bids = ps.bestBid;
+      
+      for (let i = 1; i < sp.length; i++) {
         if (sp[i] < 10) {
-          moXs.push(ts[i]);
-          moYs.push(mid[i]);
+          const delta = mid[i] - mid[i-1];
+          if (delta > 0) {
+            buyXs.push(ts[i]);
+            buyYs.push(bids[i]); // Plotted at the new higher Bid
+          } else if (delta < 0) {
+            sellXs.push(ts[i]);
+            sellYs.push(asks[i]); // Plotted at the new lower Ask
+          } else {
+            buyXs.push(ts[i]);
+            buyYs.push(bids[i]);
+          }
         }
       }
-      if (moXs.length > 0) {
+      
+      if (buyXs.length > 0) {
         markers.push({
-          name: "Market Orders (HYDROGEL)",
-          color: "#fde047",
-          outline: "#422006",
+          name: "MO Buy",
+          color: "#10b981",
+          outline: "#064e3b",
           shape: "diamond",
           size: 6,
-          xs: moXs,
-          ys: moYs,
+          xs: buyXs,
+          ys: buyYs,
+        });
+      }
+      if (sellXs.length > 0) {
+        markers.push({
+          name: "MO Sell",
+          color: "#ef4444",
+          outline: "#450a0a",
+          shape: "diamond",
+          size: 6,
+          xs: sellXs,
+          ys: sellYs,
         });
       }
     }
